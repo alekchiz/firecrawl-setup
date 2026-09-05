@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Деплой на чистом Ubuntu 22.04/24.04.
-# Запускать под пользователем с sudo. После установки перелогинься,
-# чтобы группа docker подхватилась: exit, потом ssh-заново (или newgrp docker).
+# ФАЗА 1 — подготовка Ubuntu (22.04/24.04). Запускать под sudo-пользователем.
+# После этой фазы ОБЯЗАТЕЛЬНО перелогинься, затем: bash bootstrap.sh
 
 echo "==> Обновляем систему"
 sudo apt-get update && sudo apt-get upgrade -y
 
-echo "==> Ставим Docker + Compose"
-sudo apt-get install -y ca-certificates curl git
+echo "==> Ставим Docker + Compose + утилиты"
+sudo apt-get install -y ca-certificates curl git openssl
 sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 echo \
@@ -21,23 +20,15 @@ sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plu
 echo "==> Запускаем демон Docker"
 sudo systemctl enable --now docker
 
-echo "==> Добавляем пользователя в группу docker (подхватится после перелогина)"
+echo "==> Добавляем пользователя $USER в группу docker"
 sudo usermod -aG docker "$USER"
 
+echo "==> Отключаем сон/гибернацию (важно для домашнего сервера)"
+sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target 2>/dev/null || true
+
 echo
-echo "=== ШАГ 1: ПЕРЕЛОГИНЬСЯ (exit и зайди заново), потом выполни: ==="
-echo "newgrp docker"
+echo "✅ Фаза 1 готова."
+echo "ВЫПОЛНИ: выход и вход заново (или: newgrp docker), затем:"
+echo "  bash bootstrap.sh"
 echo
-echo "=== ШАГ 2: Firecrawl из официального клона ==="
-echo "git clone https://github.com/firecrawl/firecrawl.git"
-echo "cd firecrawl && git checkout v2.11.162"
-echo "cat > .env <<'EOF'
-USE_DB_AUTHENTICATION=false
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=replace-with-at-least-32-random-characters
-POSTGRES_DB=postgres
-EOF"
-echo "docker compose up --build -d"
-echo
-echo "=== ШАГ 3: антидетект-воркер из этого репозитория ==="
-echo "cd ~/firecrawl-setup && cp .env.example .env && docker compose up --build -d"
+echo "Проверка после этого: docker ps"
