@@ -45,9 +45,15 @@ async function trySolve(page, captcha) {
 async function trySlider(page) {
   for (const sel of SLIDER_HANDLE_SELECTORS) {
     const handle = await page.$(sel).catch(() => null);
-    if (!handle) continue;
+    if (!handle) {
+      console.log('[solver] slider: no handle for', sel);
+      continue;
+    }
     const hbox = await handle.boundingBox().catch(() => null);
-    if (!hbox) continue;
+    if (!hbox) {
+      console.log('[solver] slider: handle has no box for', sel);
+      continue;
+    }
 
     // Трек — ближайший контейнер слайдера/капчи.
     const track = await handle
@@ -73,8 +79,10 @@ async function trySlider(page) {
     await page.waitForTimeout(180);
     await page.mouse.up();
     await page.waitForTimeout(1600);
+    console.log(`[solver] slider drag done ${sel} startY=${Math.round(y)} endX=${Math.round(endX)}`);
     return;
   }
+  console.log('[solver] slider: no candidate matched');
 }
 
 // Место под интеграцию с CapSolver/2Captcha: по-хорошему нужен sitekey,

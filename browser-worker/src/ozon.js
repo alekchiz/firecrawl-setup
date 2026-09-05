@@ -24,6 +24,7 @@ const CAPTCHA_TIMEOUT = 15000;   // ожидание появления капч
 const SOLVE_TIMEOUT = 45000;     // сколько ждём автоперехода проверки
 
 async function openOzon(page, url) {
+  console.log('[ozon] opening', url);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
   // лёгкое "человеческое" поведение
   await page.mouse.move(600 + Math.floor(Math.random() * 300), 300 + Math.floor(Math.random() * 200));
@@ -36,19 +37,36 @@ function findCaptcha(page) {
 
 async function handleCaptcha(page) {
   const before = Date.now();
+  let tries = 0;
   while (Date.now() - before < CAPTCHA_TIMEOUT) {
     const captcha = await findCaptcha(page);
     if (!captcha) return { passed: true, method: 'auto' };
-
+    console.log(`[ozon] captcha present (try ${++tries})`);
     // Пробуем пассивный переход (чекбокс) и слайдер. Если не вышло за цикл —
     // ставим скриншот-маркер "интерактивная".
     await trySolve(page, captcha);
     await page.waitForTimeout(1200);
   }
 
+  console.warn('[ozon] captcha NOT cleared within timeout, saving screenshot');
   const shot = `/tmp/captcha_${Date.now()}.png`;
   await page.screenshot({ path: shot, fullPage: false });
   return { passed: false, screenshot: shot };
+}
+
+// Журналируем классы DOM-элементов, похожих на капчу/слайдер, после загрузки.
+async function logDomHints(page) {
+  const hints = await page
+    .evaluate(() => {
+      return [...document.querySelectorAll('[class*="slider"],[class*="drag"],.fap-validate,#Captcha,[data-widget*="captcha"]')]
+        .slice(0, 8)
+        .map((el) => {
+          const c = (el.className && el.className.toString) ? el.className.toString() : String(el.className);
+          return c.slice(0, 80);
+        });
+    })
+    .catch(() => []);
+  console.log('[ozon] dom hints:', JSON.stringify(hints));
 }
 
 async function scrapeOzon(url, opts = {}) {
@@ -56,6 +74,7 @@ async function scrapeOzon(url, opts = {}) {
 
   try {
     await openOzon(page, url);
+    await logDomHints(page);
 
     const cap = await handleCaptcha(page);
     if (!cap.passed) {
