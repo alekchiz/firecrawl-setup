@@ -38,18 +38,17 @@ async function handleCaptcha(page) {
   const before = Date.now();
   while (Date.now() - before < CAPTCHA_TIMEOUT) {
     const captcha = await findCaptcha(page);
-    if (!captcha) return { passed: true };
+    if (!captcha) return { passed: true, method: 'auto' };
 
-    // Пытаемся автопереходом/пассивной стадией (без активного ввода).
-    const solved = await trySolve(page, captcha);
-    if (solved) return { passed: true, method: 'auto' };
-
-    // Интерактивная капча: делаем скриншот и возвращаем статус.
-    const shot = `/tmp/captcha_${Date.now()}.png`;
-    await page.screenshot({ path: shot, fullPage: false });
-    return { passed: false, screenshot: shot };
+    // Пробуем пассивный переход (чекбокс) и слайдер. Если не вышло за цикл —
+    // ставим скриншот-маркер "интерактивная".
+    await trySolve(page, captcha);
+    await page.waitForTimeout(1200);
   }
-  return { passed: false, reason: 'timeout' };
+
+  const shot = `/tmp/captcha_${Date.now()}.png`;
+  await page.screenshot({ path: shot, fullPage: false });
+  return { passed: false, screenshot: shot };
 }
 
 async function scrapeOzon(url, opts = {}) {
