@@ -1,14 +1,14 @@
-# Aнтидетект-слой + Firecrawl под Ozon
+# Aнтидетект-слой + self-hosted Firecrawl под Ozon
 
-Комплект разворачивается на отдельном сервере с Docker. Твой сервер дома —
-а вот это хорошая новость: IP дома резидентный, а не датацентровый.
+Деплой на домашнем сервере (Ubuntu + Docker). IP дома резиденциальный и
+статический — это главный плюс против капчи Ozon.
 
 ```
 firecrawl-setup/
-  docker-compose.yml      # Firecrawl (api/worker/redis) + browser-worker
-  .env.example            # конфиг композа
-  deploy.sh               # деплой на Ubuntu
-  browser-worker/         # наш антидетект-воркер (главный слой для Ozon)
+  docker-compose.yml      # только browser-worker (антидетект-слой)
+  .env.example            # PROXY_URL / HEADED
+  deploy.sh               # установка Docker + шаги деплоя
+  browser-worker/         # антидетект-воркер (главный слой для Ozon)
     src/
       index.js            # HTTP-сервис (POST /scrape)
       browser.js          # stealth-Chrome с живым профилем
@@ -17,86 +17,86 @@ firecrawl-setup/
     profiles/ozon/        # персистентный профиль браузера (важно!)
 ```
 
-## Архитектура
+## Что есть и зачем
 
-- **browser-worker** — настоящий Chromium со stealth-надстройкой и живым профилем.
-  Физическая основа для прохода. Озон палит голый Playwright Firecrawl, поэтому
-  запросы на Ozon идёт через наш воркер, а не через штатный.
-- **Firecrawl** — используется для остального скрейпинга (не-Ozon-страницы).
-  `PLAYWRIGHT_MICROSERVICE_URL` указываем на наш browser-worker.
+- **Firecrawl (self-hosted, официальный)** — API скрейпинга, поднимается из
+  своего клона через `docker compose up --build`. Используется для обычных
+  сайтов. Образ `firecrawl/app` не существует — предсобранных серверных
+  образов Firecrawl не даёт.
+- **browser-worker (этот репозиторий)** — настоящий Chromium со stealth и
+  живым профилем для Ozon. Озон палит голый Playwright, поэтому трудные
+  страницы идём через него.
 
-## Запуск на сервере
+## Установка Docker
 
 ```bash
-bash deploy.sh                        # только для Ubuntu/Debian
-# затем отредактируй .env и LICENSE_KEY в firecrawl/.env
+cd firecrawl-setup
+bash deploy.sh
+# затем exit и зайди заново (или: newgrp docker)
+```
+
+## Self-host Firecrawl (официальный путь, pinned v2.11.162)
+
+```bash
+git clone https://github.com/firecrawl/firecrawl.git
+cd firecrawl
+git checkout v2.11.162
+cat > .env <<'EOF'
+USE_DB_AUTHENTICATION=false
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=replace-with-at-least-32-random-characters
+POSTGRES_DB=postgres
+EOF
 docker compose up --build -d
 ```
 
-### Домашний сервер (резидентный IP)
-
-Твой сервер стоит дома — это плюс: жилой IP даёт кратно больше шансов, чем
-любой прокси, и бесплатно. Учти несколько особенностей такой схемы:
-
-- **Выход наружу.** В `.env` оставь `PROXY_URL=` пустым. Воркер сам выйдет
-  в сеть через IP домашнего роутера, который видишь изнутри.
-- **Внешний IP обязателен.** Если провайдер даёт серый IP за CG-NAT, то
-  наружу уходит чужой адрес, и шансы падают. Проверь с сервера:
-  `curl -s ifconfig.me` и сверь со значением «IP/WAN» в панели роутера.
-  Если не совпадают — нужен проброс или у провайдера статический IP.
-- **Динамический IP.** Периодическая смена адреса сбрасывает «прогрев».
-  Профиль при этом не удаляй (в `profiles/ozon` накапливается доверие).
-- **Первый проход окном.** При интерактивной капче поставь `HEADED=true`
-  и один раз пройди проверку руками — дальше идёт через прогретый профиль.
-- **Доступ к API.** Firecrawl слушает `localhost:3002`; с других устройств
-  в LAN — по IP сервера. Внешний доступ из интернета — только через проброс
-  портов + HTTPS, без необходимости лучше не открывать.
-
-Проверка воркера (обход капчи Ozon):
+Проверка API (появится на порту 3002):
 
 ```bash
-curl -X POST localhost:3000/scrape \
+curl --fail --silent "http://localhost:3002/v0/health/readiness"   # {"status":"ok"}
+curl --fail-with-body -s -X POST http://localhost:3002/v2/scrape \
   -H 'Content-Type: application/json' \
-  -d '{"url":"https://www.ozon.ru/"}' \
-  | python3 -m json.tool
+  -d '{"url":"https://example.com","formats":["markdown"]}'
 ```
 
-Если в ответе `"status": "captcha"` — капча интерактивная, см. ниже.
+> Smoke-стек Firecrawl включает Fetch и Playwright-обработку, но НЕ имеет
+> скриншотов/действий/встроенного антибота (это Fire-engine, идёт отдельно).
+> Слой против капчи у нас — это `browser-worker`.
 
-## Ключевые настройки
+## Запуск антидетект-воркера
 
-| Переменная        | Что делает                                                 |
-|-------------------|------------------------------------------------------------|
-| `PROXY_URL`       | пустое = выход через домашний IP. Можно подключить прокси позже |
-| `HEADED`          | `false` headless; `true` видимое окно (для ручного прохода) |
-| `PROFILE_DIR`     | путь к сохранённому профилю (накапливает доверие сайта)     |
-| `SOLVER_API_KEY`/`SOLVER_URL` | хук внешнего солвера (CapSolver и т.п.)         |
+```bash
+cd ~/firecrawl-setup
+cp .env.example .env        # PROXY_URL пустой, HEADED=false
+docker compose up --build -d
 
-## Честное резюме по Ozon
+# тест на Ozon
+curl -X POST localhost:3000/scrape -H 'Content-Type: application/json' \
+  -d '{"url":"https://www.ozon.ru/"}' | python3 -m json.tool
+```
 
-Капча Озона — собственная, работает по поведению + IP + отпечатку.
-На датацентровом IP без прокси пройти её почти нельзя; у тебя же IP
-резидентный, так что шансы заметно выше. Прагматичный расклад:
+Ответ `"status":"ok"` — прошли. `"status":"captcha"` — интерактивная капча:
 
-1. **Живой профиль** — не удаляй `profiles/ozon`. Прогретая сессия доверия.
-2. **Жилые/мобильные прокси** — резиденциальные IP для Озона решают больше,
-   чем любой солвер.
-3. **Реальные паттерны** — медленные клики, скролл, паузы, малая очередь.
-4. **Интерактивная капча** — ставишь `HEADED=true`, один раз проходишь руками,
-   дальнейшее идёт через прогретый профиль. Либо подключаешь внешний солвер
-   через `solver.js`.
-5. **Тюнинг отпечатка** — для агрессивного антидетекта смотри в сторону
-   Camoufox/undetected-chromedriver; наш воркер это базовая, не пуленепробиваемая
-   версия.
+```bash
+# в .env: HEADED=true, затем
+docker compose restart browser-worker
+# пройди проверку руками в окне один раз (прогрев профиля)
+# верни HEADED=false и restart
+```
 
-## Внешний солвер (опционально)
+## Домашний сервер: контроль внешнего IP
 
-В `solver.js` есть каркас: находится `sitekey` и делается задача в CapSolver.
-Заполни `SOLVER_API_KEY` и `SOLVER_URL` и допиши вызов task API под нужный тип
-капчи — для Озона это обычно hCaptcha-подобный вариант с сайткеем.
+`curl -s ifconfig.me` дал `109.94.1.210` — сравнено с WAN роутера, IP статический.
+Условия идеальные: жилой + статический + публичный. Не удаляй
+`browser-worker/profiles/` — там накопленное доверие к сессии.
 
-## Совместимость с Firecrawl
+Если понадобится другой адрес — заполни `PROXY_URL=http://user:pass@host:port`.
 
-Точные имена сервисов и entrypoint Firecrawl меняются от версии к версии.
-Перед прогоном сверь `docker-compose.yml` с актуальным `docker-compose.yaml`
-из их репозитория и поправь под `LICENSE_NAME`/`WORKER` текущей версии.
+## Ограничения (честно)
+
+Капча Озона — собственная, по поведению + IP + отпечатку. На жилом статическом
+IP шансы высокие, но интерактивную капчу headless-автоматизацией стабильно
+"вскрыть" нельзя: прогрев профиля (`HEADED=true`) или внешний солвер через
+`browser-worker/src/solver.js` (каркас готов: достаёт sitekey, есть хук под
+CapSolver). Для больших объёмов рассмотри отдельный anti-detect-фреймворк
+(Camoufox / undetected-chromedriver) — наш воркер это базовая рабочая версия.

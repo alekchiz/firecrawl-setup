@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Базовый деплой на чистом Ubuntu 22.04/24.04.
-# Запускать под пользователем с правами sudo.
+# Деплой на чистом Ubuntu 22.04/24.04.
+# Запускать под пользователем с sudo. После установки перелогинься,
+# чтобы группа docker подхватилась: exit, потом ssh-заново (или newgrp docker).
 
 echo "==> Обновляем систему"
 sudo apt-get update && sudo apt-get upgrade -y
@@ -17,24 +18,26 @@ echo \
 sudo apt-get update
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-echo "==> Добавляем пользователя в группу docker"
+echo "==> Запускаем демон Docker"
+sudo systemctl enable --now docker
+
+echo "==> Добавляем пользователя в группу docker (подхватится после перелогина)"
 sudo usermod -aG docker "$USER"
 
-echo "==> Клонируем и собираем Firecrawl (актуальная версия)"
-if [ ! -d firecrawl ]; then
-  git clone https://github.com/firecrawl/firecrawl
-fi
-cd firecrawl
-cp .env.example .env
-# Место для правки .env — LICENSE_KEY и ключи. Открой вручную.
-echo "! ВНИМАНИЕ: открой firecrawl/.env и впиши LICENSE_KEY и ключи."
-cd ..
-
-echo "==> Готовим переменные окружения для compose"
-if [ ! -f .env ]; then cp .env.example .env; fi
-
 echo
-echo "Дальше:"
-echo "  1) Отредактируй .env (PROXY_URL, HEADED, LICENSE_KEY в firecrawl/.env)"
-echo "  2) docker compose up --build -d"
-echo "  3) Проверка: curl -X POST localhost:3000/scrape -H 'Content-Type: application/json' -d '{\"url\":\"https://www.ozon.ru/\"}'"
+echo "=== ШАГ 1: ПЕРЕЛОГИНЬСЯ (exit и зайди заново), потом выполни: ==="
+echo "newgrp docker"
+echo
+echo "=== ШАГ 2: Firecrawl из официального клона ==="
+echo "git clone https://github.com/firecrawl/firecrawl.git"
+echo "cd firecrawl && git checkout v2.11.162"
+echo "cat > .env <<'EOF'
+USE_DB_AUTHENTICATION=false
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=replace-with-at-least-32-random-characters
+POSTGRES_DB=postgres
+EOF"
+echo "docker compose up --build -d"
+echo
+echo "=== ШАГ 3: антидетект-воркер из этого репозитория ==="
+echo "cd ~/firecrawl-setup && cp .env.example .env && docker compose up --build -d"
