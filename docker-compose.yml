@@ -1,0 +1,53 @@
+services:
+  # ============ Firecrawl (для обычного скрейпинга) ============
+  # ВАЖНО: точный набор сервисов/entrypoint зависит от версии Firecrawl.
+  # После git clone сверься с их docker-compose.yaml из репозитория.
+  api:
+    image: firecrawl/app:latest
+    ports:
+      - "3002:3002"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3002
+      - REDIS_URL=redis://redis:6379
+      - REDIS_BULLMQ_URL=redis://redisbullmq:6379
+      - NUM_WORKERS_PER_QUEUE=1
+      - PLAYWRIGHT_MICROSERVICE_URL=http://browser-worker:3000 # трафик на наш антидетект воркер
+    depends_on:
+      - redis
+      - redisbullmq
+      - browser-worker
+    restart: unless-stopped
+
+  worker:
+    image: firecrawl/app:latest
+    # command: ["puppeteer-14-connect-with-worker.js", "start-worker.js"]  # см. актуальный репозиторий
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - REDIS_BULLMQ_URL=redis://redisbullmq:6379
+      - NUM_WORKERS_PER_QUEUE=1
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+
+  redisbullmq:
+    image: redis:7
+    restart: unless-stopped
+
+  # ============ Антидетект слой (главный для Ozon) ============
+  browser-worker:
+    build: ./browser-worker
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - PROXY_URL=${PROXY_URL:-}
+      - HEADED=${HEADED:-false}
+      - PROFILE_DIR=/app/profiles/ozon
+    volumes:
+      - ./browser-worker/profiles:/app/profiles
+    restart: unless-stopped
