@@ -1,0 +1,3 @@
+# эти каталоги не отправляем в build-контекст
+profiles/
+node_modules/
