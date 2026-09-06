@@ -42,6 +42,7 @@ async function handleCaptcha(page) {
     const captcha = await findCaptcha(page);
     if (!captcha) return { passed: true, method: 'auto' };
     console.log(`[ozon] captcha present (try ${++tries})`);
+    if (tries === 1) await logDomHints(page);
     // Пробуем пассивный переход (чекбокс) и слайдер. Если не вышло за цикл —
     // ставим скриншот-маркер "интерактивная".
     await trySolve(page, captcha);
@@ -54,19 +55,23 @@ async function handleCaptcha(page) {
   return { passed: false, screenshot: shot };
 }
 
-// Журналируем классы DOM-элементов, похожих на капчу/слайдер, после загрузки.
+// Журналируем классы DOM-элементов капчи в момент, когда она уже на странице.
 async function logDomHints(page) {
   const hints = await page
     .evaluate(() => {
-      return [...document.querySelectorAll('[class*="slider"],[class*="drag"],.fap-validate,#Captcha,[data-widget*="captcha"]')]
-        .slice(0, 8)
+      return [...document.querySelectorAll('*')]
+        .filter((el) => {
+          const c = String(el.className || '');
+          return /captcha|slider|drag|fap|verify|slide|handle|push/i.test(c);
+        })
+        .slice(0, 20)
         .map((el) => {
           const c = (el.className && el.className.toString) ? el.className.toString() : String(el.className);
-          return c.slice(0, 80);
+          return `${el.tagName}.${c.slice(0, 90)}`;
         });
     })
     .catch(() => []);
-  console.log('[ozon] dom hints:', JSON.stringify(hints));
+  console.log('[ozon] dom hints (captcha present):', JSON.stringify(hints));
 }
 
 async function scrapeOzon(url, opts = {}) {
@@ -74,7 +79,6 @@ async function scrapeOzon(url, opts = {}) {
 
   try {
     await openOzon(page, url);
-    await logDomHints(page);
 
     const cap = await handleCaptcha(page);
     if (!cap.passed) {
