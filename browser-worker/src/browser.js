@@ -23,6 +23,18 @@ const ARGS = [
   '--lang=ru-RU,ru',
 ];
 
+function proxyCfg() {
+  if (!PROXY_URL) return undefined;
+  const raw = /^.+\/\/?.*/.test(PROXY_URL) ? PROXY_URL : `http://${PROXY_URL}`;
+  const u = new URL(raw);
+  const cfg = { server: `${u.protocol}//${u.host}` };
+  if (u.username) {
+    cfg.username = decodeURIComponent(u.username);
+    cfg.password = decodeURIComponent(u.password || '');
+  }
+  return cfg;
+}
+
 let contextPromise = null;
 
 function ensureContext() {
@@ -34,7 +46,7 @@ function ensureContext() {
       locale: 'ru-RU',
       timezoneId: 'Europe/Moscow',
       args: ARGS,
-      proxy: PROXY_URL ? { server: PROXY_URL } : undefined,
+      proxy: proxyCfg(),
       ignoreHTTPSErrors: true,
     });
   }

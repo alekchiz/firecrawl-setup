@@ -9,6 +9,7 @@ import os
 import re
 import time
 import random
+from urllib.parse import urlparse, unquote
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -26,6 +27,24 @@ _browser = None
 _browser_lock = False
 
 
+def _proxy_cfg():
+    """Разбираем PROXY_URL вида http://user:pass@host:port в proxy-словарь playwright."""
+    url = PROXY_URL.strip() if PROXY_URL else ""
+    if not url:
+        return None
+    if "://" not in url:
+        url = "http://" + url
+    p = urlparse(url)
+    server = f"{p.scheme}://{p.hostname}"
+    if p.port:
+        server += f":{p.port}"
+    cfg = {"server": server}
+    if p.username:
+        cfg["username"] = unquote(p.username)
+        cfg["password"] = unquote(p.password or "")
+    return cfg
+
+
 def get_browser():
     global _browser, _browser_lock
     if _browser is None and not _browser_lock:
@@ -36,8 +55,10 @@ def get_browser():
                 humanize=True,
                 geoip=False,
             )
-            if PROXY_URL and PROXY_URL.startswith(("http", "socks")):
-                kwargs["proxy"] = {"server": PROXY_URL}
+            pc = _proxy_cfg()
+            if pc:
+                kwargs["proxy"] = pc
+                print(f"[camou] using proxy {kwargs['proxy']['server']}", flush=True)
             _browser = Camoufox(**kwargs).__enter__()
             print("[camou] browser launched", flush=True)
         finally:
