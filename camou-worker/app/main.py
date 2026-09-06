@@ -68,27 +68,27 @@ def get_browser():
 
 def detect_block(page, html, title):
     """Распознаём капчу/блок ПО ФАКТУ виджета, а не по словам во всём HTML."""
-    # Строка "antibot captcha" есть в JS-бандлах НАСТОЯЩИХ страниц Ozon/Авито,
-    # поэтому судим только по фактическому присутствию виджета капчи в DOM.
-    # Контейнер капчи Ozon присутствует в скрытом виде на любой странице —
-    # считаем капчей только ВИДИМЫЙ слайдер/паззл.
-    for sel in ("#slider", "#puzzle"):
-        loc = page.locator(sel)
-        if loc.count() and _is_visible(loc.first):
-            return "captcha"
+    # Триггерим только по интерактивной ручке #slider, реально в пределах экрана.
+    # (#puzzle — это картинка, её скрытый контейнер присутствует всегда,
+    # если включать её в проверку — фантомная капча на любой странице.)
+    slider = page.locator("#slider")
+    if slider.count():
+        box = slider.first.bounding_box()
+        if box:
+            vp = page.viewport_size
+            on_screen = (
+                box["x"] < vp["width"] and box["y"] < vp["height"]
+                and box["x"] + box["width"] > 0 and box["y"] + box["height"] > 0
+                and box["width"] > 0 and box["height"] > 0
+            )
+            if on_screen:
+                return "captcha"
     low = html.lower()
     if "нет соединения" in low or "выключите vpn" in low:
         return "ip-blocked"
     if title and ("проблема с ip" in title.lower() or "доступ ограничен" in title.lower()):
         return "ip-blocked"
     return None
-
-
-def _is_visible(loc):
-    try:
-        return bool(loc.is_visible())
-    except Exception:
-        return False
 
 
 def solve_once(page, attempt):
