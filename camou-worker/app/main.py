@@ -68,27 +68,33 @@ def get_browser():
 
 def detect_block(page, html, title):
     """Распознаём капчу/блок ПО ФАКТУ виджета, а не по словам во всём HTML."""
-    # Триггерим только по интерактивной ручке #slider, реально в пределах экрана.
-    # (#puzzle — это картинка, её скрытый контейнер присутствует всегда,
-    # если включать её в проверку — фантомная капча на любой странице.)
-    slider = page.locator("#slider")
-    if slider.count():
-        box = slider.first.bounding_box()
-        if box:
-            vp = page.viewport_size
-            on_screen = (
-                box["x"] < vp["width"] and box["y"] < vp["height"]
-                and box["x"] + box["width"] > 0 and box["y"] + box["height"] > 0
-                and box["width"] > 0 and box["height"] > 0
-            )
-            if on_screen:
-                return "captcha"
+    if _slider_active(page):
+        return "captcha"
     low = html.lower()
     if "нет соединения" in low or "выключите vpn" in low:
         return "ip-blocked"
     if title and ("проблема с ip" in title.lower() or "доступ ограничен" in title.lower()):
         return "ip-blocked"
     return None
+
+
+def _slider_active(page):
+    """Активна ли капча: интерактивная ручка #slider реально в пределах экрана."""
+    slider = page.locator("#slider")
+    if slider.count() == 0:
+        return False
+    try:
+        box = slider.first.bounding_box()
+    except Exception:
+        return False
+    if not box:
+        return False
+    vp = page.viewport_size
+    return (
+        box["x"] < vp["width"] and box["y"] < vp["height"]
+        and box["x"] + box["width"] > 0 and box["y"] + box["height"] > 0
+        and box["width"] > 0 and box["height"] > 0
+    )
 
 
 def solve_once(page, attempt):
@@ -158,17 +164,24 @@ def scrape(req: ScrapeRequest):
 
         solved = False
         tried = 0
-        for attempt in range(6):
-            if page.locator("#slider").count() == 0 and "Antibot" not in page.title():
-                solved = True
-                break
+        idle = 0
+        for attempt in range(10):
+            # Ozon инжектит слайдер с задержкой: сначала даём странице устаканиться.
+            if _slider_active(page) or "Antibot" in page.title():
+                solve_once(page, attempt)
+                tried += 1
+                idle = 0
+                page.wait_for_timeout(2200)
+                continue
             if detect_block(page, page.content(), page.title()) == "ip-blocked":
                 break
-            solve_once(page, attempt)
-            tried += 1
+            idle += 1
+            if idle >= 2:  # ~5 сек чисто и стабильно -> контент
+                solved = True
+                break
             page.wait_for_timeout(2500)
 
-        print(f"[camou] tries={tried} total={(time.time()-t0):.1f}s", flush=True)
+        print(f"[camou] tries={tried} solved={solved} total={(time.time()-t0):.1f}s", flush=True)
 
         # Avito часто держит JS-челлендж ("антибот") задержкой и разрешает сам:
         # даём время на автопереход в контент, прежде чем объявлять капчу.
