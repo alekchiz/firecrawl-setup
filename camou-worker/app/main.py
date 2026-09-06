@@ -1,7 +1,5 @@
 """
-Camoufox-воркер для Ozon: антидетект-Firefox (правдоподобный отпечаток)
-+ солвер капчи-пазла (тянем #slider по смещению #puzzle.left).
-
+Camoufox-воркер: антидетект-Firefox (правдоподобный отпечаток).
 POST /scrape  {"url":"https://www.ozon.ru/"}
    -> {"ok":true,  "status":"ok",        "title":..., "html":..., "url":...}
    -> {"ok":false, "status":"captcha",   ...}
@@ -20,7 +18,7 @@ from camoufox.sync_api import Camoufox
 app = FastAPI()
 
 PROXY_URL = os.environ.get("PROXY_URL", "")
-# HEADED=true — только для ручного прохода капчи с дисплеем; по умолчанию headless.
+# HEADED=true только для ручного прохода капчи с дисплеем; по умолчанию headless.
 HEADED = os.environ.get("HEADED", "false").lower() in ("1", "true", "yes")
 HEADLESS = not HEADED
 
@@ -48,11 +46,12 @@ def get_browser():
 
 
 def detect_block(page, html, title):
-    """Распознаём капчу/блок после загрузки Ozon."""
+    """Распознаём капчу/блок в загруженной странице."""
     low = html.lower()
     if any(k in low for k in (
         "antibot captcha", "slide the slider", "puzzle piece",
         "id=\"slider\"", "id=\"puzzle\"", "captcha-container",
+        "доступ ограничен", "antibot",
     )):
         return "captcha"
     if "нет соединения" in low or "выключите vpn" in low or "abt_att=" in low:
@@ -83,7 +82,7 @@ def solve_once(page, attempt):
         if sm:
             scale = float(sm.group(1)) or 1.0
 
-    # чередуем "± шкала": попытки с масштабом и без
+    # чередуем "с масштабом / без": Ozon каждый раз генерит новое смещение
     travel = dist * scale if attempt % 2 == 0 else dist
 
     x0 = box["x"] + box["width"] / 2
@@ -106,7 +105,7 @@ def solve_once(page, attempt):
 
 class ScrapeRequest(BaseModel):
     url: str = "https://www.ozon.ru/"
-    timeout_ms: int = 60000
+    timeout_ms: int = 90000
 
 
 @app.get("/health")
@@ -118,13 +117,14 @@ def health():
 def scrape(req: ScrapeRequest):
     browser = get_browser()
     page = browser.new_page()
+    t0 = time.time()
     try:
         page.goto(req.url, wait_until="domcontentloaded", timeout=req.timeout_ms)
-        # лёгкое "человеческое" поведение
-        page.mouse.move(600 + random.randint(0, 300), 300 + random.randint(0, 200))
+        print(f"[camou] goto ok {(time.time()-t0):.1f}s url={page.url[:70]}", flush=True)
         page.wait_for_timeout(1200 + random.randint(0, 1200))
 
         solved = False
+        tried = 0
         for attempt in range(6):
             if page.locator("#slider").count() == 0 and "Antibot" not in page.title():
                 solved = True
@@ -132,22 +132,26 @@ def scrape(req: ScrapeRequest):
             if detect_block(page, page.content(), page.title()) == "ip-blocked":
                 break
             solve_once(page, attempt)
-            # после успеха Ozon делает редирект /reload
+            tried += 1
             page.wait_for_timeout(2500)
 
+        print(f"[camou] tries={tried} total={(time.time()-t0):.1f}s", flush=True)
         html = page.content()
         title = page.title()
         block = detect_block(page, html, title)
-        if block == "captcha" or page.locator("#slider").count() > 0 and not solved:
+        print(f"[camou] done block={block} total={(time.time()-t0):.1f}s", flush=True)
+
+        if block == "captcha":
             page.screenshot(path=f"/tmp/captcha_{int(time.time())}.png")
             return {"ok": False, "status": "captcha"}
         if block == "ip-blocked":
             return {"ok": False, "status": "ip-blocked",
-                    "hint": "Ozon заблокировал этот IP/сеть (нет соединения / VPN). Проверь чистоту 109.94.1.210."}
+                    "hint": "Сайт заблокировал этот IP/сеть (нет соединения / VPN)."}
         if not solved:
             return {"ok": False, "status": "captcha"}
         return {"ok": True, "status": "ok", "title": title,
-                "html": html[:1_000_000], "url": page.url}
+                "html": html[:1_000_000], "url": page.url,
+                "elapsed": round(time.time() - t0)}
     finally:
         try:
             page.close()
