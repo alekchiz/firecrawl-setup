@@ -11,7 +11,7 @@ import time
 import random
 from urllib.parse import urlparse, unquote
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 
 from camoufox.sync_api import Camoufox
@@ -22,6 +22,7 @@ PROXY_URL = os.environ.get("PROXY_URL", "")
 # HEADED=true только для ручного прохода капчи с дисплеем; по умолчанию headless.
 HEADED = os.environ.get("HEADED", "false").lower() in ("1", "true", "yes")
 HEADLESS = not HEADED
+AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "")
 
 _browser = None
 _browser_lock = False
@@ -150,12 +151,14 @@ class ScrapeRequest(BaseModel):
 
 
 @app.get("/health")
-def health():
+def health(request: Request):
+    _auth(request)
     return {"ok": True}
 
 
 @app.post("/scrape")
-def scrape(req: ScrapeRequest):
+def scrape(req: ScrapeRequest, request: Request):
+    _auth(request)
     browser = get_browser()
     page = browser.new_page()
     t0 = time.time()
@@ -224,3 +227,13 @@ def scrape(req: ScrapeRequest):
             page.close()
         except Exception:
             pass
+
+
+def _auth(request: Request):
+    """Простая защита: если задан AUTH_TOKEN, пускаем только с совпадающим
+    заголовком x-api-token (или ?token=). Пустое значение = без авторизации (LAN)."""
+    if not AUTH_TOKEN:
+        return
+    got = (request.headers.get("x-api-token") or request.query_params.get("token") or "")
+    if got != AUTH_TOKEN:
+        raise HTTPException(status_code=401, detail="unauthorized")
