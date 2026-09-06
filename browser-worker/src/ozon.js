@@ -31,8 +31,17 @@ async function openOzon(page, url) {
   await page.waitForTimeout(1200 + Math.floor(Math.random() * 1500));
 }
 
-function findCaptcha(page) {
-  return page.$([...CAPTCHA_SELECTORS].join(','));
+// Только ВИДИМАЯ капча. Ozon держит скрытый контейнер div.captcha-data hidden
+// на каждой странице — если учитывать его, триггерим ложную капчу всегда.
+async function findCaptcha(page) {
+  for (const sel of CAPTCHA_SELECTORS) {
+    const el = await page.$(sel).catch(() => null);
+    if (el) {
+      const vis = await el.isVisible().catch(() => false);
+      if (vis) return el;
+    }
+  }
+  return null;
 }
 
 async function handleCaptcha(page) {
@@ -111,6 +120,13 @@ async function scrapeOzon(url, opts = {}) {
 
     const html = await page.content();
     const title = await page.title().catch(() => '');
+    // Если Ozon нарисовал капчу с хэшированными классами (без наших селекторов) —
+    // ловим по тексту, чтобы не принять блок за контент.
+    if (/передвиньт.{0,12}ползун|не явля.{0,12}робот|подтверди.{0,12}не робот|капча|проверк.{0,10}безопасн/i.test(html)) {
+      const shot = `/tmp/captcha_${Date.now()}.png`;
+      await page.screenshot({ path: shot, fullPage: false }).catch(() => {});
+      return { ok: false, status: 'captcha', screenshot: shot };
+    }
     return { ok: true, status: 'ok', title, html: html.slice(0, opts.maxBytes || 1000000), url: page.url() };
   } finally {
     await page.close().catch(() => {});
