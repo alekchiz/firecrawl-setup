@@ -5,16 +5,19 @@
 
 ```
 firecrawl-setup/
-  docker-compose.yml      # только browser-worker (антидетект-слой)
+  docker-compose.yml      # browser-worker + camou-worker (антидетект-слой)
   .env.example            # PROXY_URL / HEADED
   deploy.sh               # установка Docker + шаги деплоя
-  browser-worker/         # антидетект-воркер (главный слой для Ozon)
+  browser-worker/         # Node-воркер (stealth-Chromium)
     src/
       index.js            # HTTP-сервис (POST /scrape)
       browser.js          # stealth-Chrome с живым профилем
       ozon.js             # навигация по Ozon + обработка капчи
       solver.js           # адаптер солвера
     profiles/ozon/        # персистентный профиль браузера (важно!)
+  camou-worker/           # Python-воркер на Camoufox (главный слой для Ozon)
+    app/main.py           # FastAPI POST /scrape + солвер капчи-пазла
+    Dockerfile
 ```
 
 ## Что есть и зачем
@@ -26,6 +29,10 @@ firecrawl-setup/
 - **browser-worker (этот репозиторий)** — настоящий Chromium со stealth и
   живым профилем для Ozon. Озон палит голый Playwright, поэтому трудные
   страницы идём через него.
+- **camou-worker** — антидетект-Firefox (Camoufox) с правдоподобным отпечатком.
+  Именно он идёт на Ozon: их капча "Antibot v12" (puzzle-слайдер) решается
+  драгом `#slider` на смещение `#puzzle.left`, но блокируется в первую очередь
+  по фингерпринту — Camoufox это закрывает. Порт 3100.
 
 ## Установка Docker
 
@@ -65,17 +72,21 @@ curl --fail-with-body -s -X POST http://localhost:3002/v2/scrape \
 
 ## Запуск антидетект-воркера
 
+Собрать оба воркера:
+
 ```bash
 cd ~/firecrawl-setup
 cp .env.example .env        # PROXY_URL пустой, HEADED=false
-docker compose up --build -d
+docker compose build browser-worker camou-worker
+docker compose up -d browser-worker camou-worker
 
 # тест на Ozon
-curl -X POST localhost:3000/scrape -H 'Content-Type: application/json' \
+curl -X POST localhost:3100/scrape -H 'Content-Type: application/json' \
   -d '{"url":"https://www.ozon.ru/"}' | python3 -m json.tool
 ```
 
-Ответ `"status":"ok"` — прошли. `"status":"captcha"` — интерактивная капча:
+Ответ `"status":"ok"` — прошли. `"status":"captcha"` — не вышло за попытки.
+`"status":"ip-blocked"` — Ozon заблокировал IP/сеть: «Похоже, нет соединения».
 
 ```bash
 # в .env: HEADED=true, затем

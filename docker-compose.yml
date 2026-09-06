@@ -14,3 +14,15 @@ services:
     volumes:
       - ./browser-worker/profiles:/app/profiles
     restart: unless-stopped
+
+  # Антидетект-слой на Camoufox (анти-детект Firefox, правдоподобный отпечаток).
+  # Основной инструмент против Ozon: отдельный Python-воркер, порт 3100.
+  camou-worker:
+    build: ./camou-worker
+    container_name: camou-worker
+    ports:
+      - "3100:3100"
+    environment:
+      - PROXY_URL=${PROXY_URL:-}
+      - HEADED=${HEADED:-false}
+    restart: unless-stopped
