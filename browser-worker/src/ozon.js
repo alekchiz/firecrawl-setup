@@ -63,13 +63,22 @@ async function logDomHints(page) {
     const h = await frame
       .evaluate(() => {
         const els = [];
-        for (const el of document.querySelectorAll('*')) {
-          const c = String(el.className || '');
-          if (/captcha|slider|drag|fap|verify|slide|handle|push|toggle/i.test(c)) {
-            els.push(`${el.tagName}.${c.slice(0, 70)}`);
+        // проходим и по shadow-root (обычный querySelectorAll их не видит)
+        const scan = (root, depth, rows) => {
+          for (const el of root.querySelectorAll('*')) {
+            const c = String(el.className || '');
+            const t = el.tagName.toLowerCase();
+            if (c && /captcha|slider|drag|fap|verify|slide|handle|push|toggle/i.test(c)) {
+              els.push(`${t}.${c.slice(0, 70)}${depth ? '[' + depth + 'sh]' : ''}`);
+            }
+            if ((t === 'canvas' || t === 'svg') && /captcha|slider|drag/i.test(c)) {
+              els.push(`${t}#canvas`);
+            }
+            if (el.shadowRoot) scan(el.shadowRoot, (depth || 0) + 1, els);
+            if (els.length >= 30) return;
           }
-          if (els.length >= 15) break;
-        }
+        };
+        scan(document, 0, els);
         return { url: location.href.slice(0, 80), els };
       })
       .catch(() => null);
