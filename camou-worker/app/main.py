@@ -156,7 +156,8 @@ def scrape(req: ScrapeRequest):
 
         if block == "captcha":
             page.screenshot(path=f"/tmp/captcha_{int(time.time())}.png")
-            return {"ok": False, "status": "captcha"}
+            print(f"[camou] captcha final url={page.url[:90]} title={title[:60]!r}", flush=True)
+            return {"ok": False, "status": "captcha", "url": page.url, "title": title[:120]}
         if block == "ip-blocked":
             return {"ok": False, "status": "ip-blocked",
                     "hint": "Сайт заблокировал этот IP/сеть (нет соединения / VPN)."}
