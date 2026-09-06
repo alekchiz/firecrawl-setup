@@ -118,6 +118,7 @@ def scrape(req: ScrapeRequest):
     browser = get_browser()
     page = browser.new_page()
     t0 = time.time()
+    is_avito = "avito" in (req.url or "").lower()
     try:
         page.goto(req.url, wait_until="domcontentloaded", timeout=req.timeout_ms)
         print(f"[camou] goto ok {(time.time()-t0):.1f}s url={page.url[:70]}", flush=True)
@@ -136,6 +137,18 @@ def scrape(req: ScrapeRequest):
             page.wait_for_timeout(2500)
 
         print(f"[camou] tries={tried} total={(time.time()-t0):.1f}s", flush=True)
+
+        # Avito часто держит JS-челлендж ("антибот") задержкой и разрешает сам:
+        # даём время на автопереход в контент, прежде чем объявлять капчу.
+        if is_avito and detect_block(page, page.content(), page.title()) == "captcha":
+            for _ in range(18):  # до ~36 сек
+                page.wait_for_timeout(2000)
+                b = detect_block(page, page.content(), page.title())
+                if b is None:
+                    solved = True
+                    break
+            print(f"[camou] avito wait-resolve done solved={solved} total={(time.time()-t0):.1f}s", flush=True)
+
         html = page.content()
         title = page.title()
         block = detect_block(page, html, title)
