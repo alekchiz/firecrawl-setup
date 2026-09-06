@@ -26,6 +26,9 @@ const SLIDER_HANDLE_SELECTORS = [
   '[class*="slider"] button',
 ];
 
+// Счётчик попыток: поочерёдно пробуем расстояние со шкалой контейнера и без неё.
+let puzzleAttempts = 0;
+
 async function trySolve(page, captcha) {
   // 1) Пассивная стадия: кликабельный чекбокс без интерактивного ввода.
   const frames = page.frames();
@@ -38,13 +41,62 @@ async function trySolve(page, captcha) {
     }
   }
 
-  // 2) Слайдер-капча: тянем головку до правого края трека.
+  // 2) Капча Ozon "Antibot v12": puzzle-слайдер с известным DOM (#slider + #puzzle.left).
+  await solveOzonPuzzle(page);
+
+  // 3) Обобщённый слайдер-фолбэк: тянем головку до правого края трека.
   await trySlider(page);
 
-  // 3) Если настроен внешний солвер — делегируем (см. README).
+  // 4) Если настроен внешний солвер — делегируем (см. README).
   if (SOLVER_API_KEY && SOLVER_URL) {
     await remoteSolve(page);
   }
+}
+
+// Решаем капчу-пазл Ozon: ручка #slider, цель = горизонтальный сдвиг кусочка
+// #puzzle (её inline style left: Npx отсчитывает требуемое расстояние до паза).
+async function solveOzonPuzzle(page) {
+  const slider = await page.$('#slider').catch(() => null);
+  if (!slider) return false;
+  const puzzle = await page.$('#puzzle').catch(() => null);
+  if (!puzzle) return false;
+
+  const hbox = await slider.boundingBox().catch(() => null);
+  if (!hbox) return false;
+
+  const style = (await puzzle.getAttribute('style').catch(() => '')) || '';
+  const m = /left:\s*(-?[\d.]+)px/.exec(style);
+  let dist = m ? Math.abs(parseFloat(m[1])) : 0;
+  if (!dist) dist = hbox.width * 2; // страховка: тянем на всю трек-ширину
+
+  // Масштаб контейнера капчи (--scale), если задан.
+  const captcha = await page.$('#captcha').catch(() => null);
+  let scale = 1;
+  if (captcha) {
+    const cs = (await captcha.getAttribute('style').catch(() => '')) || '';
+    const sm = /--scale:\s*([\d.]+)/.exec(cs);
+    if (sm) scale = parseFloat(sm[1]) || 1;
+  }
+  // Чередуем варианты расстояния между попытками.
+  const travel = puzzleAttempts++ % 2 === 0 ? dist * scale : dist;
+
+  const startX = hbox.x + hbox.width / 2;
+  const y = hbox.y + hbox.height / 2;
+  const endX = startX + travel;
+
+  await page.mouse.move(startX, y);
+  await page.mouse.down();
+  const steps = 18 + Math.floor(Math.random() * 6);
+  for (let i = 1; i <= steps; i++) {
+    const x = startX + (endX - startX) * (i / steps);
+    await page.mouse.move(x, y + (Math.random() - 0.5) * 2);
+    await page.waitForTimeout(9 + Math.random() * 9);
+  }
+  await page.waitForTimeout(160);
+  await page.mouse.up();
+  await page.waitForTimeout(1800);
+  console.log(`[solver] ozon puzzle slider dragged dist=${Math.round(travel)} scale=${scale} startX=${Math.round(startX)}`);
+  return true;
 }
 
 async function trySlider(page) {

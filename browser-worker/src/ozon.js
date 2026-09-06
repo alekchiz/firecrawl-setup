@@ -16,11 +16,15 @@ const { trySolve } = require('./solver');
 const CAPTCHA_SELECTORS = [
   'div[data-widget="checkoutCaptcha"]',
   '#Captcha',
+  '#captcha',
+  '#captcha-container',
+  '#slider-background',
+  '#puzzle',
   'iframe[src*="captcha"]',
   '.fap-validate',
   '[class*="captcha"]',
 ];
-const CAPTCHA_TIMEOUT = 15000;   // ожидание появления капчи
+const CAPTCHA_TIMEOUT = 20000;   // ожидание появления капчи
 const SOLVE_TIMEOUT = 45000;     // сколько ждём автоперехода проверки
 
 async function openOzon(page, url) {
@@ -47,9 +51,18 @@ async function findCaptcha(page) {
 async function handleCaptcha(page) {
   const before = Date.now();
   let tries = 0;
+  let gone = 0;
   while (Date.now() - before < CAPTCHA_TIMEOUT) {
     const captcha = await findCaptcha(page);
-    if (!captcha) return { passed: true, method: 'auto' };
+    if (!captcha) {
+      // капча-страница загружается с задержкой: требуем пары чистых проверок,
+      // чтобы не выйти раньше, чем успела отрисоваться.
+      gone += 1;
+      if (gone >= 2) return { passed: true, method: 'auto' };
+      await page.waitForTimeout(1200);
+      continue;
+    }
+    gone = 0;
     console.log(`[ozon] captcha present (try ${++tries})`);
     if (tries === 1) await logDomHints(page);
     // Пробуем пассивный переход (чекбокс) и слайдер. Если не вышло за цикл —
@@ -122,7 +135,8 @@ async function scrapeOzon(url, opts = {}) {
     const title = await page.title().catch(() => '');
     // Если Ozon нарисовал капчу с хэшированными классами (без наших селекторов) —
     // ловим по тексту, чтобы не принять блок за контент.
-    if (/передвиньт.{0,12}ползун|не явля.{0,12}робот|подтверди.{0,12}не робот|капча|проверк.{0,10}безопасн/i.test(html)) {
+    // Ozon на этой странице капчи пишет по-английски (Antibot Captcha / Slide the slider)
+    if (/Antibot Captcha|Slide the slider|puzzle piece|you['’]re not a bot|captcha-container|id="slider"|id="puzzle"|передвиньт.{0,12}ползун|не явля.{0,12}робот|подтверди.{0,12}не робот|капча|проверк.{0,10}безопасн/i.test(html)) {
       const shot = `/tmp/captcha_${Date.now()}.png`;
       await page.screenshot({ path: shot, fullPage: false }).catch(() => {});
       return { ok: false, status: 'captcha', screenshot: shot };
