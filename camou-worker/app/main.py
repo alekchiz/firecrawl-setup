@@ -67,15 +67,14 @@ def get_browser():
 
 
 def detect_block(page, html, title):
-    """Распознаём капчу/блок в загруженной странице."""
+    """Распознаём капчу/блок ПО ФАКТУ виджета, а не по словам во всём HTML."""
     low = html.lower()
-    if any(k in low for k in (
-        "antibot captcha", "slide the slider", "puzzle piece",
-        "id=\"slider\"", "id=\"puzzle\"", "captcha-container",
-        "доступ ограничен", "antibot",
-    )):
+    has_slider = page.locator("#slider").count() > 0 or page.locator("#puzzle").count() > 0
+    if has_slider or "antibot captcha" in low:
         return "captcha"
-    if "нет соединения" in low or "выключите vpn" in low or "abt_att=" in low:
+    if "нет соединения" in low or "выключите vpn" in low:
+        return "ip-blocked"
+    if title and ("проблема с ip" in title.lower() or "доступ ограничен" in title.lower()):
         return "ip-blocked"
     return None
 
