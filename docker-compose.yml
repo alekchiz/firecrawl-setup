@@ -20,6 +20,9 @@ services:
   camou-worker:
     build: ./camou-worker
     container_name: camou-worker
+    # Firefox sandbox в root-контейнере требует userns: ослабляем seccomp
+    security_opt:
+      - seccomp:unconfined
     ports:
       - "3100:3100"
     environment:
