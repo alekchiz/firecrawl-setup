@@ -17,8 +17,13 @@ const SLIDER_HANDLE_SELECTORS = [
   '[class*="slider"] [class*="thumb"]',
   '[class*="drag"] [class*="button"]',
   '[class*="captcha"] [class*="button"]',
+  '[class*="slide"] [class*="button"]',
+  '[class*="toggle"]',
+  '.kc-slider',
   '[role="slider"]',
   '.fap-slider',
+  // фолбэк: первая кнопка/элемент внутри трека-слайдера в фрейме капчи
+  '[class*="slider"] button',
 ];
 
 async function trySolve(page, captcha) {
@@ -43,44 +48,40 @@ async function trySolve(page, captcha) {
 }
 
 async function trySlider(page) {
-  for (const sel of SLIDER_HANDLE_SELECTORS) {
-    const handle = await page.$(sel).catch(() => null);
-    if (!handle) {
-      console.log('[solver] slider: no handle for', sel);
-      continue;
-    }
-    const hbox = await handle.boundingBox().catch(() => null);
-    if (!hbox) {
-      console.log('[solver] slider: handle has no box for', sel);
-      continue;
-    }
+  // Капча Ozon живёт в iframe: ищем хендл по ВСЕМ фреймам.
+  const frames = [page.mainFrame(), ...page.childFrames()];
+  for (const frame of frames) {
+    for (const sel of SLIDER_HANDLE_SELECTORS) {
+      const handle = await frame.$(sel).catch(() => null);
+      if (!handle) continue;
+      const hbox = await handle.boundingBox().catch(() => null);
+      if (!hbox) continue;
 
-    // Трек — ближайший контейнер слайдера/капчи.
-    const track = await handle
-      .evaluateHandle((el) =>
-        el.closest('[class*="slider"],[class*="drag"],.fap-validate,[class*="captcha"]') || document.body
-      )
-      .catch(() => null);
-    const tbox = track ? await track.boundingBox().catch(() => null) : null;
-    const endX = tbox ? tbox.x + tbox.width - 6 : hbox.x + hbox.width + 80;
-    const startX = hbox.x + hbox.width / 2;
-    const y = hbox.y + hbox.height / 2;
+      // Трек — ближайший контейнер слайдера в этом фрейме.
+      const track = await handle
+        .evaluateHandle((el) =>
+          el.closest('[class*="slider"],[class*="drag"],.fap-validate,[class*="captcha"]') || document.body
+        )
+        .catch(() => null);
+      const tbox = track ? await track.boundingBox().catch(() => null) : null;
+      const endX = tbox ? tbox.x + tbox.width - 6 : hbox.x + hbox.width + 80;
+      const startX = hbox.x + hbox.width / 2;
+      const y = hbox.y + hbox.height / 2;
 
-    await page.mouse.move(startX, y);
-    await page.mouse.down();
-
-    // Несколько шагов + лёгкий шум по Y — ближе к естественному движению.
-    const steps = 20 + Math.floor(Math.random() * 8);
-    for (let i = 1; i <= steps; i++) {
-      const x = startX + (endX - startX) * (i / steps);
-      await page.mouse.move(x, y + (Math.random() - 0.5) * 2);
-      await page.waitForTimeout(8 + Math.random() * 10);
+      await page.mouse.move(startX, y);
+      await page.mouse.down();
+      const steps = 20 + Math.floor(Math.random() * 8);
+      for (let i = 1; i <= steps; i++) {
+        const x = startX + (endX - startX) * (i / steps);
+        await page.mouse.move(x, y + (Math.random() - 0.5) * 2);
+        await page.waitForTimeout(8 + Math.random() * 10);
+      }
+      await page.waitForTimeout(180);
+      await page.mouse.up();
+      await page.waitForTimeout(1600);
+      console.log(`[solver] slider drag done ${sel} startY=${Math.round(y)} endX=${Math.round(endX)}`);
+      return;
     }
-    await page.waitForTimeout(180);
-    await page.mouse.up();
-    await page.waitForTimeout(1600);
-    console.log(`[solver] slider drag done ${sel} startY=${Math.round(y)} endX=${Math.round(endX)}`);
-    return;
   }
   console.log('[solver] slider: no candidate matched');
 }

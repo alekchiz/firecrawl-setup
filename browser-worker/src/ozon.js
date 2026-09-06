@@ -57,21 +57,25 @@ async function handleCaptcha(page) {
 
 // Журналируем классы DOM-элементов капчи в момент, когда она уже на странице.
 async function logDomHints(page) {
-  const hints = await page
-    .evaluate(() => {
-      return [...document.querySelectorAll('*')]
-        .filter((el) => {
+  const frames = [page.mainFrame(), ...page.childFrames()];
+  const hints = [];
+  for (const frame of frames) {
+    const h = await frame
+      .evaluate(() => {
+        const els = [];
+        for (const el of document.querySelectorAll('*')) {
           const c = String(el.className || '');
-          return /captcha|slider|drag|fap|verify|slide|handle|push/i.test(c);
-        })
-        .slice(0, 20)
-        .map((el) => {
-          const c = (el.className && el.className.toString) ? el.className.toString() : String(el.className);
-          return `${el.tagName}.${c.slice(0, 90)}`;
-        });
-    })
-    .catch(() => []);
-  console.log('[ozon] dom hints (captcha present):', JSON.stringify(hints));
+          if (/captcha|slider|drag|fap|verify|slide|handle|push|toggle/i.test(c)) {
+            els.push(`${el.tagName}.${c.slice(0, 70)}`);
+          }
+          if (els.length >= 15) break;
+        }
+        return { url: location.href.slice(0, 80), els };
+      })
+      .catch(() => null);
+    if (h) hints.push(h);
+  }
+  console.log('[ozon] frame hints:', JSON.stringify(hints));
 }
 
 async function scrapeOzon(url, opts = {}) {
