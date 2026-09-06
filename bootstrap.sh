@@ -20,7 +20,12 @@ fi
 cd firecrawl-setup
 cp -n .env.example .env || true
 echo "==> Собираем browser-worker (стек Firecrawl ещё не запущен)"
-docker compose build browser-worker
+for i in $(seq 1 6); do
+  echo "== worker build $i/6 =="
+  if docker compose build browser-worker; then break; fi
+  echo "== worker build не вышло, пауза =="
+  sleep 12
+done
 docker compose up -d browser-worker
 echo "==> Проверка воркера:"
 curl -s http://localhost:3000/health && echo

@@ -10,7 +10,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --omit=dev
+# На сервере нет IPv6-маршрута: DNS может вернуть AAAA для npm/Cloudflare,
+# и Node зависает. Форсим IPv4 + даём npm таймауты/ретраи вместо вечного ожидания.
+ENV NODE_OPTIONS=--dns-result-order=ipv4first \
+    npm_config_fetch_timeout=180000 \
+    npm_config_fetch_retries=5 \
+    npm_config_fetch_retry_max_timeout=180000 \
+    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000
+RUN npm install --omit=dev --no-audit --no-fund
 # Устанавливаем Chromium, используемый playwright
 RUN npx playwright install chromium --with-deps || true
 
