@@ -80,6 +80,9 @@ def detect_block(page, html, title):
 
 def _slider_active(page):
     """Активна ли капча: интерактивная ручка #slider реально в пределах экрана."""
+    # Требуем контейнер капчи Ozon: на других сайтах "#slider" — обычная карусель.
+    if page.locator("#captcha-container").count() == 0:
+        return False
     slider = page.locator("#slider")
     if slider.count() == 0:
         return False
@@ -161,6 +164,8 @@ def scrape(req: ScrapeRequest):
         page.goto(req.url, wait_until="domcontentloaded", timeout=req.timeout_ms)
         print(f"[camou] goto ok {(time.time()-t0):.1f}s url={page.url[:70]}", flush=True)
         page.wait_for_timeout(1200 + random.randint(0, 1200))
+        print(f"[camou] dom cc={page.locator('#captcha-container').count()} "
+              f"s={page.locator('#slider').count()} p={page.locator('#puzzle').count()}", flush=True)
 
         solved = False
         tried = 0
