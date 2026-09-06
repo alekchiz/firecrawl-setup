@@ -49,7 +49,7 @@ async function trySolve(page, captcha) {
 
 async function trySlider(page) {
   // Капча Ozon живёт в iframe: ищем хендл по ВСЕМ фреймам.
-  const frames = [page.mainFrame(), ...page.childFrames()];
+  const frames = page.frames();
   for (const frame of frames) {
     for (const sel of SLIDER_HANDLE_SELECTORS) {
       const handle = await frame.$(sel).catch(() => null);

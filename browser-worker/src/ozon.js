@@ -57,7 +57,7 @@ async function handleCaptcha(page) {
 
 // Журналируем классы DOM-элементов капчи в момент, когда она уже на странице.
 async function logDomHints(page) {
-  const frames = [page.mainFrame(), ...page.childFrames()];
+  const frames = page.frames();
   const hints = [];
   for (const frame of frames) {
     const h = await frame
