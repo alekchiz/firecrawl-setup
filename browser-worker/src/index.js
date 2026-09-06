@@ -4,7 +4,7 @@
 
 const express = require('express');
 const { scrapeOzon } = require('./ozon');
-const { newPage } = require('./browser');
+const { newPage, ensureContext } = require('./browser');
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
@@ -37,3 +37,17 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`[browser-worker] listening on :${PORT}`);
   console.log(`[browser-worker] proxy=${process.env.PROXY_URL || 'NONE'} headed=${process.env.HEADED === 'true'}`);
 });
+
+// Прогрев Chromium при старте: первый боевой запрос не должен совпадать
+// с холодным запуском браузера (иначе пик памяти -> OOM, сокет рвётся).
+setTimeout(async () => {
+  try {
+    await ensureContext();
+    const page = await newPage();
+    await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+    await page.close().catch(() => {});
+    console.log('[browser-worker] chromium warmed up');
+  } catch (e) {
+    console.warn('[browser-worker] warmup failed:', String(e?.message || e));
+  }
+}, 1500);
