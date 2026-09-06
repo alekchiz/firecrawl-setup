@@ -37,6 +37,8 @@ if [ ! -d firecrawl ]; then
 fi
 cd firecrawl
 git checkout v2.11.162
+echo "==> IPv4-first патч Dockerfile Firecrawl (нет IPv6-маршрута на сервере)"
+bash "$APP/firecrawl-setup/patch-ipv4.sh" "$PWD" || echo "!! патч не применился, смотрим ниже"
 if [ ! -f .env ]; then
   PASS=$(openssl rand -hex 16)
   cat > .env <<EOF
@@ -48,7 +50,12 @@ EOF
   echo "==> POSTGRES_PASSWORD сгенерирован: $PASS (сохранён в ~/app/firecrawl/.env)"
 fi
 echo "==> Собираем и запускаем Firecrawl (долго, грузит CPU)"
-docker compose up --build -d
+for i in $(seq 1 8); do
+  echo "== firecrawl build $i/8 =="
+  if docker compose up --build -d; then echo OK-build; break; fi
+  echo "== firecrawl build не вышло, пауза =="
+  sleep 15
+done
 
 # ---- 3) Проверка ----
 echo "==> Ожидаем готовности Firecrawl"
