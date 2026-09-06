@@ -166,6 +166,9 @@ def scrape(req: ScrapeRequest):
         return {"ok": True, "status": "ok", "title": title,
                 "html": html[:1_000_000], "url": page.url,
                 "elapsed": round(time.time() - t0)}
+    except Exception as e:  # noqa: BLE001 — единая обёртка для любых сайтов
+        print(f"[camou] scrape ERROR {type(e).__name__}: {str(e)[:200]}", flush=True)
+        return {"ok": False, "status": "error", "error": f"{type(e).__name__}: {str(e)[:200]}"}
     finally:
         try:
             page.close()
