@@ -20,7 +20,9 @@ from camoufox.sync_api import Camoufox
 app = FastAPI()
 
 PROXY_URL = os.environ.get("PROXY_URL", "")
-HEADLESS = os.environ.get("HEADLESS", "false").lower() in ("1", "true", "yes")
+# HEADED=true — только для ручного прохода капчи с дисплеем; по умолчанию headless.
+HEADED = os.environ.get("HEADED", "false").lower() in ("1", "true", "yes")
+HEADLESS = not HEADED
 
 _browser = None
 _browser_lock = False
