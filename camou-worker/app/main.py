@@ -9,12 +9,15 @@ import os
 import re
 import time
 import random
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse, unquote
 
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 
 from camoufox.sync_api import Camoufox
+from camoufox.addons import DefaultAddons
 
 app = FastAPI()
 
@@ -25,7 +28,9 @@ HEADLESS = not HEADED
 AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "")
 
 _browser = None
-_browser_lock = False
+# Всё выполняется на ОДНОМ потоке: Camoufox (sync) thread-bound и теряет браузер,
+# если запускать/дёргать его с разных нитей.
+_ENGINE = ThreadPoolExecutor(max_workers=1, thread_name_prefix="camou")
 
 
 def _proxy_cfg():
@@ -46,24 +51,25 @@ def _proxy_cfg():
     return cfg
 
 
+def _launch_browser():
+    # uBlock не нужен для скрейпинга, а его скачивание с addons.mozilla.org
+    # вешает старт на нестабильной сети. Исключаем — и запуск оффлайн.
+    kwargs = dict(headless=HEADLESS, humanize=True, geoip=False,
+                  exclude_addons=[DefaultAddons.UBO])
+    pc = _proxy_cfg()
+    if pc:
+        kwargs["proxy"] = pc
+        print(f"[camou] using proxy {kwargs['proxy']['server']}", flush=True)
+    return Camoufox(**kwargs).__enter__()
+
+
 def get_browser():
-    global _browser, _browser_lock
-    if _browser is None and not _browser_lock:
-        _browser_lock = True
-        try:
-            kwargs = dict(
-                headless=HEADLESS,
-                humanize=True,
-                geoip=False,
-            )
-            pc = _proxy_cfg()
-            if pc:
-                kwargs["proxy"] = pc
-                print(f"[camou] using proxy {kwargs['proxy']['server']}", flush=True)
-            _browser = Camoufox(**kwargs).__enter__()
-            print("[camou] browser launched", flush=True)
-        finally:
-            _browser_lock = False
+    """Синглтон-браузер. Всё выполняется на потоке единого executer-а, поэтому
+    Camoufox (sync, thread-bound) не теряет свою нить запуска."""
+    global _browser
+    if _browser is None:
+        _browser = _launch_browser()
+        print("[camou] browser launched", flush=True)
     return _browser
 
 
@@ -72,7 +78,10 @@ def detect_block(page, html, title):
     if _slider_active(page):
         return "captcha"
     low = html.lower()
-    if "нет соединения" in low or "выключите vpn" in low:
+    # Ozon может отдавать блок-страницу и на английском.
+    if ("нет соединения" in low or "выключите vpn" in low
+            or "no connection" in low or "no internet connection" in low
+            or "make sure your vpn" in low or "no connection" in title.lower()):
         return "ip-blocked"
     if title and ("проблема с ip" in title.lower() or "доступ ограничен" in title.lower()):
         return "ip-blocked"
@@ -94,11 +103,18 @@ def _slider_active(page):
     if not box:
         return False
     vp = page.viewport_size
-    return (
-        box["x"] < vp["width"] and box["y"] < vp["height"]
-        and box["x"] + box["width"] > 0 and box["y"] + box["height"] > 0
-        and box["width"] > 0 and box["height"] > 0
-    )
+    # Camoufox в headless иногда возвращает None до первого layout'а —
+    # не валим запрос, а честно сообщаем "капчи пока нет".
+    if not vp:
+        return False
+    try:
+        return (
+            box["x"] < vp["width"] and box["y"] < vp["height"]
+            and box["x"] + box["width"] > 0 and box["y"] + box["height"] > 0
+            and box["width"] > 0 and box["height"] > 0
+        )
+    except Exception:
+        return False
 
 
 def solve_once(page, attempt):
@@ -156,10 +172,11 @@ def health(request: Request):
     return {"ok": True}
 
 
-@app.post("/scrape")
-def scrape(req: ScrapeRequest, request: Request):
-    _auth(request)
+def _run_scrape(req: ScrapeRequest):
     browser = get_browser()
+    if browser is None:
+        return {"ok": False, "status": "error",
+                "error": "browser failed to start (launch timeout)"}
     page = browser.new_page()
     t0 = time.time()
     is_avito = "avito" in (req.url or "").lower()
@@ -227,6 +244,22 @@ def scrape(req: ScrapeRequest, request: Request):
             page.close()
         except Exception:
             pass
+
+
+@app.post("/scrape")
+def scrape(req: ScrapeRequest, request: Request):
+    _auth(request)
+    fut = _ENGINE.submit(_run_scrape, req)
+    # page.goto упирается в req.timeout_ms; добавляем запас на запуск браузера/обвязку.
+    wait_s = (req.timeout_ms / 1000.0) + 150.0
+    try:
+        return fut.result(timeout=wait_s)
+    except TimeoutError:
+        return {"ok": False, "status": "error",
+                "error": "timeout (worker busy or a page hung)"}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "status": "error",
+                "error": f"{type(e).__name__}: {str(e)[:200]}"}
 
 
 def _auth(request: Request):
