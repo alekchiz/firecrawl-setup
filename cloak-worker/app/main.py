@@ -53,7 +53,7 @@ class ScrapeRequest(BaseModel):
 @app.get("/health")
 def health(request: Request):
     _auth(request)
-    return {"ok": True}
+    return {"ok": True, "engine": "cloakbrowser", "auth": "allowlist"}
 
 
 @app.post("/scrape")

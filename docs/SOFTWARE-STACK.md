@@ -66,6 +66,7 @@
 ## 5. Репозиторий (структура)
 
 ```
+Боевой (актуальный стек):
 camou-worker/   Dockerfile + app/main.py (Camoufox-воркер, :3100)
 cloak-worker/   Dockerfile + app/main.py (CloakBrowser-воркер, :3101)
 mcp/            firecrawl_node_bridge.js (+ firecrawl_mcp.py, python-мост)
@@ -74,6 +75,11 @@ docs/           документация
 manage-keys.sh  управление персональными ключами
 patch-ipv4.sh   патч Dockerfile под IPv4 (для Firecrawl)
 docker-compose.yml
+Легаси (не в текущем compose, справочно):
+browser-worker/  старый stealth-Chromium воркер (мигрирован на cloaker)
+deploy.sh        устаревший скрипт деплоя (см. docs/ и manage-keys.sh)
+bootstrap.sh      черновик установки (см. docs/DEPLOY-*)
+.env.example      шаблон переменных окружения
 ```
 
 ## 6. Портовая схема
