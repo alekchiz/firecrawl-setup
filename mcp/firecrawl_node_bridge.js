@@ -20,19 +20,25 @@ async function ozonSearch(query, limit){
   const q=String(query||'').trim();
   if(!q) return {isError:true,content:[{type:'text',text:'query обязателен'}]};
   const url='https://www.ozon.ru/search/?text='+encodeURIComponent(q);
-  try{
-    const {status,data}=await post(WORKER_URL,{url,timeout_ms:60000},75000,AUTH_TOKEN);
-    if(status!==200) return {isError:true,content:[{type:'text',text:'HTTP '+status}]};
-    if(!data.ok) return {isError:true,content:[{type:'text',text:JSON.stringify(data).slice(0,1200)}]};
-    const html=data.html||'';
-    const links=[...new Set([...html.matchAll(/href="\/product\/([^"]+)/g)].map(m=>m[1].split('?')[0]))].slice(0,n);
-    if(!links.length) return {isError:true,content:[{type:'text',text:'товары не найдены (Ozon не отдал карточки)'}]};
+  // Ozon без прокси флуктурует (то капча, то ip-blocked) — пробуем оба движка.
+  const bases=[WORKER_URL, CLOAK_WORKER_URL, WORKER_URL];
+  let lastErr='';
+  for(const base of bases){
+    try{
+      const {status,data}=await post(base,{url,timeout_ms:60000},75000,AUTH_TOKEN);
+      if(status!==200){lastErr='HTTP '+status;continue;}
+      if(!data.ok){lastErr=(data&&data.status)||'нет контента';continue;}
+      const html=data.html||'';
+      const links=[...new Set([...html.matchAll(/href="\/product\/([^"]+)/g)].map(m=>m[1].split('?')[0]))].slice(0,n);
+      if(!links.length){lastErr='товары не найдены';continue;}
     const rows=links.map((s,i)=>{
       const t=s.replace(/-\d+$/,'').replace(/-/g,' ').replace(/смартфон\s+/i,'');
       return (i+1)+'. '+t.replace(/\b\w/g,c=>c.toUpperCase())+'\n   https://www.ozon.ru/product/'+s;
     });
     return {isError:false,content:[{type:'text',text:'Ozon — «'+q+'», топ '+links.length+':\n'+rows.join('\n')+'\n\nP.S. цен тут нет: Ozon держит их в закрытом microfrontend.'}]};
-  }catch(e){return {isError:true,content:[{type:'text',text:'ozon error: '+e.message}]};}
+    }catch(e){lastErr=e.message;}
+  }
+  return {isError:true,content:[{type:'text',text:'ozon: '+lastErr+' (пробованы camou и cloak)'}]};
 }
 async function md(url,to){const m=(to||90)*1000;try{const{status,data}=await post(FIRECRAWL_URL+'/v2/scrape',{url,formats:['markdown'],timeout:m},m,AUTH_TOKEN);const z=(data&&data.data&&data.data.markdown)||null;if(!z)return{isError:true,content:[{type:'text',text:'firecrawl: '+JSON.stringify(data).slice(0,2000)}]};return{isError:false,content:[{type:'text',text:z.slice(0,6000)}]};}catch(e){return{isError:true,content:[{type:'text',text:'firecrawl error: '+e.message}]};}}
 async function wbSearch(query, limit){
