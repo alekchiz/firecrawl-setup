@@ -13,3 +13,5 @@ firecrawl/
 # логи, скриншоты капчи, временные файлы
 *.log
 /tmp/tokens.txt
+
+.DS_Store
