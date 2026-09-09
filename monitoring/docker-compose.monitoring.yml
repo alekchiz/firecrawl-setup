@@ -1,0 +1,34 @@
+# Лёгкий мониторинг: node-exporter + Prometheus (retention 7 дней).
+# Подключается переопределением базового compose:
+#   docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d
+# При маленькой RAM (4GiB) используй scrape_interval 30s (в prometheus.yml).
+
+services:
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=168h'
+      - '--web.listen-address=0.0.0.0:9090'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+volumes:
+  prometheus-data:
