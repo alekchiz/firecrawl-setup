@@ -1,115 +1,129 @@
-# Развёртывание ПОЛНОЙ версии на Ubuntu 24.04 — БЕЗ git
+# Развёртывание FULL (воркеры + Firecrawl) — Ubuntu 24.04, без git
 
-Полная версия = воркеры (camou :3100, cloak :3101) **+ Firecrawl** (:3002).
-Требования выше: 4 vCPU / 8 GiB / 40+ ГБ (на 4 GiB — только с swap и лимитами,
-см. раздел «Лимиты памяти»). Интернет обязателен.
+Цель: поднять всё, что есть в проекте — воркеры `camou` (3100), `cloak` (3101)
+**и** Firecrawl (3002). Тогда у пользователей будет и «обычный» скрейп
+`scrape_markdown`, и антибот-тулы.
 
-Firecrawl — отдельный открытый проект; тянется архивом, git не нужен.
+> Требования: **4 vCPU / 8 GiB / 40 ГБ** (на 4 GiB — только с swap и лимитами,
+> см. шаг 11). Git не нужен.
 
 ---
 
-## 1. Подготовка и Docker
+## Шаг 1. Базовые пакеты Docker
 
 ```bash
 sudo apt-get update && sudo apt-get install -y curl ca-certificates openssl
 curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker "$USER"
-sudo systemctl enable --now docker   # затем перелогинься/newgrp docker
+sudo systemctl enable --now docker
+# перелогинься / newgrp docker
 ```
 
-Swap (для 8 GiB опционально, для 4 GiB — обязательно):
+Swap (обязателен при 4 GiB, полезен и при 8 GiB):
 ```bash
 sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
 sudo mkswap /swapfile && sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
 
-## 2. Стенд-воркеры (как в LITE)
+## Шаг 2. Воркеры (стенд) — как в LITE
 
 ```bash
 mkdir -p ~/lite && cd ~/lite
 curl -L -o firecrawl-setup.tar.gz \
   https://codeload.github.com/alekchiz/firecrawl-setup/tar.gz/refs/heads/main
-tar -xzf firecrawl-setup.tar.gz
-cd firecrawl-setup-main
+tar -xzf firecrawl-setup.tar.gz && cd firecrawl-setup-main
 cp .env.example .env
-# AUTH_TOKEN, PROXY_URL — по желанию; см. DEPLOY-NOGIT-LITE.md шаг 5
 touch tokens.txt && chmod 600 tokens.txt
-docker compose build camou-worker
-docker compose build cloak-worker
+# приведи .env в порядок (AUTH_TOKEN, PROXY_URL) — как в DEPLOY-NOGIT-LITE.md
+docker compose build camou-worker && docker compose build cloak-worker
 docker compose up -d camou-worker cloak-worker
 ```
 
-## 3. Firecrawl (официальный smoke-stack, версия v2.11.162)
+Проверь воркеры:
+```bash
+curl -s http://localhost:3100/health -H "x-api-token: <TOKEN>"   # 200
+```
+
+## Шаг 3. Firecrawl
 
 ```bash
 mkdir -p ~/app && cd ~/app
 curl -L -o firecrawl.tar.gz https://github.com/firecrawl/firecrawl/archive/refs/tags/v2.11.162.tar.gz
-tar -xzf firecrawl.tar.gz && mv firecrawl-2.11.162 firecrawl
-cd firecrawl
-```
-
-`.env` (минимум, без ДБ-аутентификации):
-```bash
+tar -xzf firecrawl.tar.gz && mv firecrawl-2.11.162 firecrawl && cd firecrawl
 cat > .env <<'EOF'
 USE_DB_AUTHENTICATION=false
 POSTGRES_USER=postgres
-POSTGRES_PASSWORD=<надёжный, минимум 32 символа>
+POSTGRES_PASSWORD=сгенерируй_надёжный_более_32_символов
 POSTGRES_DB=postgres
 EOF
 ```
 
-IPv4-фикс (из репозитория стенда) — против проблем с npm по IPv6:
+IPv4-фикс (из репозитория стенда):
 ```bash
 bash ~/lite/firecrawl-setup-main/patch-ipv4.sh "$PWD"
 ```
 
-Сборка и запуск (долго, на 2 CPU — терпеливо, может требоваться повтор):
+Сборка и запуск (долго, на 2 CPU — терпи и повторяй при обрыве сети):
 ```bash
 docker compose up --build -d
 ```
 
-Готовность:
+Дождись готовности:
 ```bash
 for i in $(seq 1 30); do
   c=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3002/v0/health/readiness || true)
   [ "$c" = "200" ] && break; sleep 10
 done
-echo "Firecrawl readiness: $c"
+echo "readiness=$c"     # ож. 200
 ```
 
-## 4. Доступ снаружи
+## Шаг 4. Доступ снаружи
 
-Firecrawl и стенд:
 ```bash
 sudo ufw allow 22/tcp && sudo ufw allow 3002/tcp
 sudo ufw allow 3100/tcp && sudo ufw allow 3101/tcp
 sudo ufw enable
-# NAT: 3002, 3100, 3101 → внутрь машины
+# NAT на роутере: 3002, 3100, 3101 → внутрь
 ```
 
-## 5. Лимиты памяти (только если RAM 4 GiB)
+## Шаг 5. Персональные ключи
 
-Добавь в `docker-compose.yml` Firecrawl под `api` и `playwright-service`:
-```yaml
-    mem_limit: 1024m
-    pids_limit: 512
-```
-и перезапусти: `docker compose up -d`. Без этого на 4 GiB возможен OOM.
+Как в LITE (`manage-keys.sh gen/gen/list`). Пользователи в конфиг добавляют
+дополнительно `FIRECRAWL_URL=http://<IP>:3002`.
 
-## 6. Проверка интеграции
+## Шаг 6. Проверка интеграции
 
 ```bash
-TOK=<мастер-токен из .env стенда>
+TOK=<токен>
 curl -s -H "x-api-token: $TOK" http://localhost:3100/health   # 200
 curl -s -X POST http://localhost:3002/v2/scrape \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://example.com/","formats":["markdown"]}' | head -c 120
 ```
-В конфиге MCP у пользователей: `WORKER_URL`, `CLOAK_WORKER_URL`,
-`FIRECRAWL_URL=http://<IP>:3002`.
 
-## Примечания
-- Firecrawl построен без fire-engine: честно не решает антибот и капчу; его роль —
-  `scrape_markdown` (обычные сайты). Тяжёлые сайты — через воркеры.
-- Сборка Firecrawl на 2 CPU затратна; используй swap и терпи повторы.
+## Шаг 7. (4 GiB) Лимиты памяти
+
+Если RAM всего 4 GiB — ограничь API и playwright-service Firecrawl. Добавь в
+`docker-compose.yml` Firecrawl под сервис `api` и `playwright-service`:
+```yaml
+    mem_limit: 1024m
+    pids_limit: 512
+```
+и перезапусти: `docker compose up -d`. Без этого на 4 GiB высок риск OOM.
+
+## Типичные проблемы
+
+| Симптом | Решение |
+|---------|---------|
+| Firecrawl не поднимается | пересобрать (`docker compose build`), смотреть `docker logs firecrawl-api-1` |
+| readiness долго 500/пусто | ждать/пересобрать; проверить Postgres/Redis в `docker compose ps` |
+| сборка падает по сети | повтор `docker compose build` (ретраи) |
+| OOM при сборке | увеличить swap |
+
+## Что дальше
+
+- Раздай ключи и `USER-GUIDE.md` пользователям.
+- Роль Firecrawl — «обычные сайты» (`scrape_markdown`); тяжёлые/антибот — через
+  воркеры. Firecrawl построен без fire-engine: капчи он не решает.
+- Обновление — `DEPLOY-GIT.md` (или повторить шаги при новой версии).
