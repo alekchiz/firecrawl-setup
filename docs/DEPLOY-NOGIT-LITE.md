@@ -1,38 +1,59 @@
-# Развёртывание упрощённой версии (LITE) на Ubuntu 24.04 — БЕЗ git
+# Развёртывание LITE (только воркеры) — Ubuntu 24.04, без git
 
-Цель: поднять MCP-стенд «только воркеры» (camou :3100, cloak :3101) на машине
-2 vCPU / 4 GiB / 40 ГБ. Файлы тянутся архивом через `curl` — git не нужен.
+Цель: на сервере поднять два воркера — `camou` (3100) и `cloak` (3101) —
+для MCP-стенда. Подходит для машины 2 CPU / 4 GiB / 40 ГБ. Git не требуется.
 
-Среда: Ubuntu 24.04 (x86_64), пользователь с правами `sudo`, выход в интернет.
+> **Что получится в конце:** будут жить `camou-worker` и `cloak-worker`;
+> пользователи подключаются к ним через тулы `scrape_url` / `scrape_cloak` /
+> `scrape_wb` / `scrape_ozon`. `scrape_markdown` в LITE не работает (нет Firecrawl).
 
 ---
 
-## 1. Подготовка системы
+## Предусловия
+
+- Ubuntu 24.04 (x86_64), доступ по SSH, пользователь с `sudo`, интернет.
+- Планируемое место: ~5–8 ГБ (образы + данные), RAM ≥ 2 ГБ (лучше 4 ГБ).
+
+## Шаг 1. Обновить систему и поставить базовые утилиты
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y curl ca-certificates openssl
 ```
 
-## 2. Swap (защита сборки от OOM на 4 GiB)
+## Шаг 2. Создать файл подкачки (swap) 4 ГиБ
+
+Нужен при сборке, чтобы не упасть по памяти.
 
 ```bash
 sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
 sudo mkswap /swapfile && sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-free -h   # строка Swap должна показать ~4GiB
 ```
 
-## 3. Установка Docker
+Ожидаемый результат:
+```bash
+free -h        # строка "Swap:" должна показывать ~4GiB
+```
+
+## Шаг 3. Установить Docker
 
 ```bash
 curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker "$USER"
 sudo systemctl enable --now docker
-# Выйди и зайди заново (или выполни `newgrp docker`), чтобы docker работал без sudo.
 ```
 
-## 4. Скачивание проекта без git
+После этого **выйди из SSH и зайди снова** (или `newgrp docker`), чтобы команды
+`docker` работали без `sudo`.
+
+Проверка:
+```bash
+docker version --format '{{.Server.Version}}'
+docker compose version
+```
+
+## Шаг 4. Скачать проект архивом (без git)
 
 ```bash
 mkdir -p ~/lite && cd ~/lite
@@ -42,85 +63,102 @@ tar -xzf firecrawl-setup.tar.gz
 cd firecrawl-setup-lite-stand
 ```
 
-Проверь состав:
+Проверка состава:
 ```bash
-ls                    # camou-worker/ cloak-worker/ docker-compose.yml manage-keys.sh ...
+ls
+# должны увидеть: camou-worker/ cloak-worker/ docker-compose.yml manage-keys.sh docs/ ...
 ```
 
-## 5. Файл учётных данных `.env`
+## Шаг 5. Настроить `.env`
 
 ```bash
 cp .env.example .env
-sed -i "s|^AUTH_TOKEN=.*|AUTH_TOKEN=ВАШ-МАСТЕР-ТОКЕН|" .env   # legacy-токен (опционально)
-# PROXY_URL оставь пустым (без прокси) или пропиши жилой:
-# printf 'PROXY_URL=http://user:pass@host:port\n' >> .env
-nano .env
 ```
 
-Убедись, что строки заканчиваются переводами строк (иначе значения «склеятся»).
+Открой файл и проверь / задай значения:
+```bash
+nano .env
+```
+- `AUTH_TOKEN` — мастер-токен (legacy; опционально, можно оставить пустым,
+  пользователям выдаёшь персональные через `manage-keys.sh`).
+- `PROXY_URL` — пусто (без прокси) или жилой прокси `http://user:pass@host:port`
+  (стабилизирует Ozon).
+- **Проверь**, что каждая строка заканчивается переводом строки (иначе значения
+  «склейются»). `AUTH_TOKEN` может быть любой длинной строкой.
 
-## 6. Пустой файл токенов (персональные ключи)
+## Шаг 6. Создать файл персональных ключей
 
 ```bash
 touch tokens.txt && chmod 600 tokens.txt
 ```
 
-## 7. Сборка (по одному, не параллельно)
+## Шаг 7. Собрать образы (по одному!)
+
+Собирай по очереди — при параллельной сборке на 4 GiB возможен OOM:
 
 ```bash
 docker compose build camou-worker
-docker compose build cloak-worker   # тянет ~200 МБ stealth-Chromium
+docker compose build cloak-worker    # качает ~200 МБ stealth-Chromium
 ```
 
-## 8. Запуск и автозапуск
+## Шаг 8. Запустить и проверить
 
 ```bash
 docker compose up -d camou-worker cloak-worker
-docker compose ps
-# restart: unless-stopped в compose + enabled docker => поднимутся после reboot
+docker compose ps    # оба должны быть Up
 ```
 
-## 9. Проверка
+Проверка эндпоинтов (подставь `TOKEN` — персональный ключ или `AUTH_TOKEN`):
+```bash
+TOKEN=<токен>
+curl -s -H "x-api-token: $TOKEN" http://localhost:3100/health   # ож. {"ok":true,engine:"camoufox"}
+curl -s -H "x-api-token: $TOKEN" http://localhost:3101/health   # ож. {"ok":true,engine:"cloakbrowser"}
+curl -s -X POST http://localhost:3100/scrape \
+  -H 'Content-Type: application/json' -H "x-api-token: $TOKEN" \
+  -d '{"url":"https://example.com/"}' | head -c 200             # ож. status ok
+```
+
+## Шаг 9. Выдать пользователям ключи
 
 ```bash
-TOK=$(grep '^AUTH_TOKEN=' .env | cut -d= -f2)
-curl -s -H "x-api-token: $TOK" http://localhost:3100/health    # 200
-curl -s -H "x-api-token: $TOK" http://localhost:3101/health    # 200
-curl -s -X POST http://localhost:3100/scrape \
-  -H 'Content-Type: application/json' -H "x-api-token: $TOK" \
-  -d '{"url":"https://example.com/"}' | head -c 200
+./manage-keys.sh gen ivan    # покажет AUTH_TOKEN=<ключ> — отдай его Ивану
+./manage-keys.sh list
 ```
+Подробнее — `ADMIN-GUIDE.md`.
 
-## 10. Доступ снаружи
+## Шаг 10. Открыть доступ снаружи
 
-Файрвол:
+Файрвол (UFW):
 ```bash
 sudo ufw allow 22/tcp
 sudo ufw allow 3100/tcp
 sudo ufw allow 3101/tcp
 sudo ufw enable && sudo ufw status
 ```
+Роутер/провайдер: пробросить порты `3100` и `3101` на этот сервер.
 
-NAT/проброс на роутере: **3100, 3101** → внутренний IP этой машины.
-Проверка снаружи:
+Проверка снаружи (с другого компьютера):
 ```bash
-curl -s -H "x-api-token: $TOK" http://<ПУБЛИЧНЫЙ_IP>:3101/health  # 200
+curl -s -H "x-api-token: $TOKEN" http://<ПУБЛИЧНЫЙ_IP>:3101/health   # 200
 ```
 
-## 11. Персональные ключи пользователей
+## Автозапуск
 
-```bash
-./manage-keys.sh gen ivan     # выдаёт ключ, показывает AUTH_TOKEN=...
-./manage-keys.sh list
-./manage-keys.sh revoke ivan  # мгновенно отозвать
-```
-Выданные ключи раздай пользователям (полные шаги — в USER-GUIDE.md).
+В `docker-compose.yml` стоит `restart: unless-stopped`, а Docker включён в boot
+(шаг 3). После перезагрузки контейнеры поднимутся сами.
 
-## Что работает в LITE
-`scrape_url` (обычные/маркетплейсы), `scrape_cloak` (Turnstile/403),
-`scrape_wb` (WB с ценами), `scrape_ozon` (Ozon, без цен). Тула `scrape_markdown`
-нет (нет Firecrawl) — обычные сайты через `scrape_url`.
+## Типичные проблемы
 
-## Примечания
-- Ozon без жилого прокси периодически `ip-blocked` — заполни `PROXY_URL` для стабильности.
-- 4 GiB хватает; следи за `docker stats` и swap при сборке.
+| Симптом | Причина / решение |
+|---------|-------------------|
+| `docker: command not found` | не перелогинился после шага 3 — `newgrp docker` |
+| сборка упала «OOM» | увеличь swap (шаг 2) или перезапусти сборку после отдыха |
+| `401` у всех | токены пусты (`manage-keys.sh list`), выдай заново |
+| внешний порт не открывается | не проброшен NAT на роутере (шаг 10) |
+| Ozon `ip-blocked` | без прокси норма — заполни `PROXY_URL` и перезапусти |
+
+## Что дальше
+
+- Выдай ключи (шаг 9) и раздай пользователям `USER-GUIDE.md`.
+- Опциональный мониторинг — `MONITORING.md`.
+- Для полной версии с Firecrawl — `DEPLOY-NOGIT-FULL.md`.
