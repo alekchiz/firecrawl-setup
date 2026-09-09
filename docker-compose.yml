@@ -30,3 +30,18 @@ services:
       - HEADED=${HEADED:-false}
       - AUTH_TOKEN=${AUTH_TOKEN:-}
     restart: unless-stopped
+
+  # Резервный движок на CloakBrowser (stealth-Chromium, C++-патчи): проходит
+  # Cloudflare/Turnstile и «403», где Camoufox пасует. Порт 3101.
+  cloak-worker:
+    build: ./cloak-worker
+    container_name: cloak-worker
+    security_opt:
+      - seccomp:unconfined
+    ports:
+      - "3101:3101"
+    environment:
+      - PROXY_URL=${PROXY_URL:-}
+      - HEADED=${HEADED:-false}
+      - AUTH_TOKEN=${AUTH_TOKEN:-}
+    restart: unless-stopped
