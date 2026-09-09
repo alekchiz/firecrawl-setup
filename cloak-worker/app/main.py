@@ -5,6 +5,7 @@ import os
 import re
 import time
 import threading
+import pathlib
 
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
@@ -90,9 +91,26 @@ def scrape(req: ScrapeRequest, request: Request):
         return {"ok": False, "status": "error", "error": f"{type(e).__name__}: {str(e)[:200]}"}
 
 
+def _allowed_tokens():
+    """AUTH_TOKEN (legacy) + все токены из TOKENS_FILE (allowlist, один на строку:
+    `<token> [user]`). Читается на каждый запрос — выдача/отзыв действуют сразу."""
+    toks = {AUTH_TOKEN} if AUTH_TOKEN else set()
+    tf = os.environ.get("TOKENS_FILE", "")
+    if tf:
+        try:
+            for line in pathlib.Path(tf).read_text(encoding="utf-8", errors="ignore").splitlines():
+                t = line.split()[0].strip() if line.strip() else ""
+                if t:
+                    toks.add(t)
+        except OSError:
+            pass
+    return toks
+
+
 def _auth(request: Request):
-    if not AUTH_TOKEN:
+    toks = _allowed_tokens()
+    if not toks:
         return
     got = (request.headers.get("x-api-token") or request.query_params.get("token") or "")
-    if got != AUTH_TOKEN:
+    if got not in toks:
         raise HTTPException(status_code=401, detail="unauthorized")
