@@ -4,8 +4,9 @@ description: Сбор данных с сайтов через MCP-стенд (а
 ---
 # firecrawl-stack
 
-Тулы: `scrape_url` (антибот-воркер Camoufox), `scrape_markdown` (Firecrawl) и
-`scrape_wb` (товары с Wildberries через фирменный поиск WB — надёжнее, чем HTML).
+Тулы: `scrape_url` (антибот-воркер Camoufox), `scrape_cloak` (CloakBrowser —
+stealth-Chromium, проходит Turnstile/403, напр. DNS-шоп), `scrape_markdown`
+(Firecrawl) и `scrape_wb` (товары с Wildberries через фирменный поиск WB).
 
 ## Когда использовать
 1. Пользователь просит «собери информацию с интернета» / «спарси» / «найди данные на сайте».
@@ -14,13 +15,14 @@ description: Сбор данных с сайтов через MCP-стенд (а
 ## Алгоритм
 1. Сначала обычный `webfetch` на целевой URL.
 2. Если контент получен — используй его.
-3. Если капча/блок/пусто — вызови `scrape_markdown` (обычный сайт), затем при необходимости `scrape_url` (маркетплейс/защищённый сайт).
-3. Для товаров с Wildberries используй `scrape_wb` (запрос + количество) — он сам
-   ретраит 429 и возвращает цены/скидки/рейтинги/ссылки, без антибота HTML.
+3. Если капча/блок/пусто — вызови `scrape_markdown` (обычный сайт), затем при
+   необходимости `scrape_url`, а для Turnstile/«403» — `scrape_cloak`.
+4. Для товаров с Wildberries используй `scrape_wb` (запрос + количество) — он сам
+   ретраит 429 и возвращает цены/скидки/рейтинги/ссылки.
 5. Разбери результат под запрос пользователя.
 
 ## Формат вызова тула
-`firecrawl-stack_scrape_url` / `firecrawl-stack_scrape_markdown` / `firecrawl-stack_scrape_wb`.
+`firecrawl-stack_scrape_url` / `_scrape_cloak` / `_scrape_markdown` / `_scrape_wb`.
 
 ## Ответы воркера
 - `status: ok` + title/text — контент получен, парсируй.

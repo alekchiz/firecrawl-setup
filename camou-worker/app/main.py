@@ -63,6 +63,28 @@ def _launch_browser():
     return Camoufox(**kwargs).__enter__()
 
 
+def _hydrate_content(page, url=""):
+    """Триггерим клиентскую гидратацию JS-страниц (WB, каталоги): мягкие скроллы
+    + ожидание появления карточек/ссылок. Без этого воркер отдаёт «shell» без товаров."""
+    low = url.lower()
+    is_market = any(k in low for k in ("wildberries", "wb.ru", "ozon", "avito",
+                                       "search.aspx", "/catalog/", "megamarket", "dns-shop"))
+    try:
+        for _ in range(3):
+            page.mouse.wheel(0, 4000)
+            page.wait_for_timeout(900)
+        page.mouse.wheel(0, -6000)
+        page.wait_for_timeout(800)
+    except Exception:
+        pass
+    if is_market:
+        try:
+            page.locator('a[href*="/catalog/"], a[href*="/product/"], .product-card, [data-wba-at], [data-wb]').first.wait_for(timeout=12000)
+            page.wait_for_timeout(800)
+        except Exception:
+            pass
+
+
 def get_browser():
     """Синглтон-браузер. Всё выполняется на потоке единого executer-а, поэтому
     Camoufox (sync, thread-bound) не теряет свою нить запуска."""
@@ -184,6 +206,7 @@ def _run_scrape(req: ScrapeRequest):
         page.goto(req.url, wait_until="domcontentloaded", timeout=req.timeout_ms)
         print(f"[camou] goto ok {(time.time()-t0):.1f}s url={page.url[:70]}", flush=True)
         page.wait_for_timeout(1200 + random.randint(0, 1200))
+        _hydrate_content(page, req.url)
         print(f"[camou] dom cc={page.locator('#captcha-container').count()} "
               f"s={page.locator('#slider').count()} p={page.locator('#puzzle').count()}", flush=True)
 
