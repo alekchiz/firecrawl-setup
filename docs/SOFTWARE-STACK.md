@@ -45,6 +45,10 @@
 - `Systemd` — автозапуск Docker.
 - `swap` (fallocate/mkswap/swapon) — подстраховка памяти.
 
+### Мониторинг (опционально)
+- `prom/node-exporter` — метрики хоста (RAM/CPU/диск), :9100.
+- `prom/prometheus` — сбор/хранение (TSDB), retention 7 дней, UI :9090.
+
 ## 3. На клиенте пользователя (Kilo Code)
 
 | Компонент | Назначение |

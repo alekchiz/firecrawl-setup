@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 30s      # под 4 GiB держи 30-60s
+  evaluation_interval: 30s
+
+rule_files: []
+scrape_configs:
+  - job_name: node
+    static_configs:
+      - targets: ['localhost:9100']

@@ -91,6 +91,10 @@ docker logs --tail 50 cloak-worker
 - Вести журнал выдачи ключей (кто, когда, кому) — хотя бы в `manage-keys.sh list`.
 - При росте нагрузки (много пользователей) — воркеры не параллелят: думай о
   большем числе воркеров или планировании очередей.
+- **Опциональный мониторинг**: лёгкий стек `node-exporter` + `prometheus`
+  (retention 7 дней) — см. `docs/MONITORING.md`. Запуск:
+  `docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d`.
+  Метрики: RAM/CPU/диск. На 4 GiB держи интервал 30с.
 
 ## 7. Безопасность
 
