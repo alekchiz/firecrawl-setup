@@ -101,9 +101,18 @@ def detect_block(page, html, title):
         return "captcha"
     low = html.lower()
     # Ozon может отдавать блок-страницу и на английском.
+    if "captcha" in title.lower() or "antibot" in title.lower():
+        return "captcha"
     if ("нет соединения" in low or "выключите vpn" in low
             or "no connection" in low or "no internet connection" in low
-            or "make sure your vpn" in low or "no connection" in title.lower()):
+            or "make sure your vpn" in low or "no connection" in title.lower()
+            # страницы-ошибки/блоки, которые воркер ошибочно помечал "ok"
+            or "http 403" in title.lower() or "упс" in title.lower()):
+        return "ip-blocked"
+    # общие признаки "stub"/ошибок, когда HTML почти пуст (нет контента)
+    if (len((html or "").strip()) < 1500
+            and ("is not available" in low or "not found" in low
+                 or "ошибка" in low or "captcha" in low)):
         return "ip-blocked"
     if title and ("проблема с ip" in title.lower() or "доступ ограничен" in title.lower()):
         return "ip-blocked"
