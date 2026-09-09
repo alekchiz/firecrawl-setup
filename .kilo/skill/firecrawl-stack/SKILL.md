@@ -8,6 +8,9 @@ description: Сбор данных с сайтов через MCP-стенд (а
 stealth-Chromium, проходит Turnstile/403, напр. DNS-шоп), `scrape_markdown`
 (Firecrawl), `scrape_wb` (товары WB) и `scrape_ozon` (товары Ozon).
 
+**Lite-стенд (без Firecrawl):** `scrape_markdown` может отсутствовать. Тогда
+для ОБЫЧНЫХ сайтов используй `scrape_url` (он тоже отдаёт текст страницы).
+
 ## Когда использовать
 1. Пользователь просит «собери информацию с интернета» / «спарси» / «найди данные на сайте».
 2. Обычный `webfetch` вернул капчу, пустоту, ошибку, или сайт защищён антиботом.
@@ -17,9 +20,9 @@ stealth-Chromium, проходит Turnstile/403, напр. DNS-шоп), `scrape
 2. Если контент получен — используй его.
 3. **Если `webfetch` наткнулся на КАПЧУ / «Проверяем браузер» / Cloudflare /
    капчу «403» / пустой ответ — это НЕ конечный результат.** Сразу переключайся
-   на стенд: сначала `scrape_markdown` (обычный сайт), затем `scrape_url`
-   (Camoufox), а для Turnstile/«403» — `scrape_cloak`. Не объявляй «не
-   получилось», пока не попробовал хотя бы эти два тула.
+   на стенд: `scrape_url` (Camoufox) для обычных сайтов, `scrape_cloak` для
+   Turnstile/«403», `scrape_markdown` — только если доступен. Не объявляй «не
+   получилось», пока не попробовал `scrape_url`/`scrape_cloak`.
 4. Для товаров с Wildberries используй `scrape_wb` (запрос + количество) — он сам
    ретраит 429 и возвращает цены/скидки/рейтинги/ссылки.
 5. Для товаров с Ozon используй `scrape_ozon` (названия + ссылки; цены Ozon не
@@ -28,7 +31,7 @@ stealth-Chromium, проходит Turnstile/403, напр. DNS-шоп), `scrape
 
 ## Формат вызова тула
 `firecrawl-stack_scrape_url` / `_scrape_cloak` / `_scrape_markdown` / `_scrape_wb`
-/ `_scrape_ozon`.
+/ `_scrape_ozon` (`_scrape_markdown` — только если есть Firecrawl).
 
 ## Ответы воркера
 - `status: ok` + title/text — контент получен, парсируй.
