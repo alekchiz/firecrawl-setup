@@ -201,7 +201,7 @@ class ScrapeRequest(BaseModel):
 @app.get("/health")
 def health(request: Request):
     _auth(request)
-    return {"ok": True}
+    return {"ok": True, "engine": "camoufox", "auth": "allowlist"}
 
 
 def _run_scrape(req: ScrapeRequest):
