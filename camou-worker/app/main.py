@@ -10,6 +10,7 @@ import re
 import time
 import random
 import threading
+import pathlib
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse, unquote
 
@@ -295,10 +296,21 @@ def scrape(req: ScrapeRequest, request: Request):
 
 
 def _auth(request: Request):
-    """Простая защита: если задан AUTH_TOKEN, пускаем только с совпадающим
-    заголовком x-api-token (или ?token=). Пустое значение = без авторизации (LAN)."""
-    if not AUTH_TOKEN:
+    """Allowlist-защита: AUTH_TOKEN (legacy) + токены из TOKENS_FILE
+    (один на строку: `<token> [user]`). Читается на каждый запрос — выдача/отзыв
+    действуют сразу. Пустой список = без авторизации (LAN)."""
+    toks = {AUTH_TOKEN} if AUTH_TOKEN else set()
+    tf = os.environ.get("TOKENS_FILE", "")
+    if tf:
+        try:
+            for line in pathlib.Path(tf).read_text(encoding="utf-8", errors="ignore").splitlines():
+                t = line.split()[0].strip() if line.strip() else ""
+                if t:
+                    toks.add(t)
+        except OSError:
+            pass
+    if not toks:
         return
     got = (request.headers.get("x-api-token") or request.query_params.get("token") or "")
-    if got != AUTH_TOKEN:
+    if got not in toks:
         raise HTTPException(status_code=401, detail="unauthorized")

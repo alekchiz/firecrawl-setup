@@ -29,6 +29,9 @@ services:
       - PROXY_URL=${PROXY_URL:-}
       - HEADED=${HEADED:-false}
       - AUTH_TOKEN=${AUTH_TOKEN:-}
+      - TOKENS_FILE=/app/tokens.txt
+    volumes:
+      - ./tokens.txt:/app/tokens.txt:ro
     restart: unless-stopped
 
   # Резервный движок на CloakBrowser (stealth-Chromium, C++-патчи): проходит
@@ -44,4 +47,7 @@ services:
       - PROXY_URL=${PROXY_URL:-}
       - HEADED=${HEADED:-false}
       - AUTH_TOKEN=${AUTH_TOKEN:-}
+      - TOKENS_FILE=/app/tokens.txt
+    volumes:
+      - ./tokens.txt:/app/tokens.txt:ro
     restart: unless-stopped
