@@ -10,11 +10,15 @@ DeepSeek) агент умел собирать данные с сайтов, а 
 ```bash
 git clone git@github.com:alekchiz/firecrawl-setup.git
 cd firecrawl-setup
-./install-kilo.sh
 ```
-На Windows — вместо третьей строки: `.\install-kilo.ps1` (или
-`powershell -ExecutionPolicy Bypass -File .\install-kilo.ps1`). Без SSH-ключа:
-`git clone https://github.com/alekchiz/firecrawl-setup.git`.
+Установка — Node.js 18+ (нужен и так), одна команда, работает на macOS/Linux/Windows:
+```bash
+node install-kilo.js
+```
+В PowerShell/CMD: `node install-kilo.js` (пиши без `./`). Без SSH-ключа —
+`git clone https://github.com/alekchiz/firecrawl-setup.git`. Если хочется нативный
+bash на macOS/Linux — `./install-kilo.sh`, на Windows — `.\install-kilo.ps1`
+(но там может мешать политика выполнения PowerShell).
 
 Установщик сам: проверит Node.js 18+, положит мост в `~/mcp/`, поднимет скилл
 на проект и впишет секцию `mcp` в `~/.config/kilo/kilo.jsonc`, не трогая
